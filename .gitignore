@@ -1,0 +1,11 @@
+.DS_Store
+.idea/
+.vscode/
+node_modules/
+dist/
+build/
+coverage/
+tmp/
+.env
+.env.*
+!.env.example
