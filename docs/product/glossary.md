@@ -1,22 +1,22 @@
-# Glossary
+# 用語集
 
 ## Organization
-A tenant-like boundary containing members and approval configuration.
+メンバーと承認設定を含む、テナント相当の境界。
 
 ## Member
-A user acting within an organization.
+Organization内で操作するユーザー。
 
 ## Request
-A business request submitted for approval.
+承認を求めて提出される業務上の申請。
 
 ## Approval Workflow
-The rules determining which approval steps a Request must pass.
+RequestがどのApproval Stepを通過する必要があるかを決定するルール。
 
 ## Approval Step
-A unit of approval responsibility in a workflow.
+ワークフロー内の承認責任単位。
 
 ## Approver
-A member authorized to decide an approval step.
+Approval Stepに対する判断権限を持つMember。
 
 ## Decision Record
-A durable record of an important product or architecture decision and its rationale.
+重要なProduct/Architecture Decisionと、その理由を永続的に記録する文書。

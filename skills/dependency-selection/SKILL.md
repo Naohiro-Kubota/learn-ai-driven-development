@@ -1,18 +1,18 @@
-# Dependency Selection Knowledge
+# 依存関係選定Knowledge
 
-When evaluating a production dependency, compare candidates against:
+本番依存関係を評価する場合、候補を以下の観点で比較してください。
 
-1. Requirement fit
-2. Complexity introduced
-3. Reversibility / lock-in
-4. Maintenance activity and ecosystem maturity
-5. Security posture
-6. Testability
-7. Operational impact
-8. Team cognitive load
-9. Compatibility with language/toolchain
-10. Migration/exit path
+1. 要求への適合度
+2. 導入する複雑性
+3. 可逆性 / ロックイン
+4. 保守状況・エコシステム成熟度
+5. セキュリティ
+6. テスト容易性
+7. 運用への影響
+8. チームの認知負荷
+9. 言語 / Toolchainとの互換性
+10. 移行・Exit path
 
-Do not use popularity as the sole justification.
+人気だけを採用理由にしてはいけません。
 
-For foundational dependencies, create an ADR with 2-4 credible options and explicit decision drivers.
+基盤となる依存関係では、2〜4個の妥当な候補と明示的なDecision driversを含むADRを作成してください。

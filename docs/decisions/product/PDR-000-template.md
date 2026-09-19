@@ -1,4 +1,4 @@
-# PDR-NNN: <product decision title>
+# PDR-NNN: <プロダクト意思決定タイトル>
 
 - Status: Proposed
 - Date: YYYY-MM-DD
@@ -9,7 +9,7 @@
 
 ## Context
 
-What product/business question requires a decision?
+どのプロダクト/業務上の問いに答える必要があるのか。
 
 ## Options considered
 
@@ -25,20 +25,20 @@ What product/business question requires a decision?
 
 ## Decision
 
-Proposed recommendation or Accepted choice.
+Proposed状態では推奨案、Accepted状態では確定した選択を記載する。
 
 ## Rationale
 
-Why this behavior is preferred.
+なぜこの振る舞いを選択するのか。
 
 ## Consequences
 
-User, operational, support, security, and implementation implications.
+ユーザー、運用、サポート、セキュリティ、実装への影響。
 
 ## Acceptance examples
 
-Concrete examples that make the chosen behavior unambiguous.
+選択した振る舞いを曖昧にしないための具体例。
 
 ## Revisit conditions
 
-What change in business needs or observed behavior should trigger reconsideration?
+どのようなビジネス要求や観測結果の変化が再検討のトリガーになるか。

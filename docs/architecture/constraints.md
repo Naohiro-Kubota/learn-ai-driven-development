@@ -1,17 +1,17 @@
-# Architecture Constraints
+# アーキテクチャ制約
 
-These constraints are intentionally minimal so that architecture emerges through explicit decisions.
+Architectureを明示的なDecisionによって形成していくため、初期制約は意図的に最小限とします。
 
-## Fixed
+## 固定
 
-- Frontend language is TypeScript.
-- Backend language is Go.
-- The product is a browser-based web application.
-- Server-side authorization is mandatory.
-- Auditability and concurrency safety are first-class concerns.
-- Production dependencies require rationale.
-- Foundational architecture choices require an Accepted ADR.
+- フロントエンド言語はTypeScript
+- バックエンド言語はGo
+- プロダクトはブラウザベースのWebアプリケーション
+- サーバー側認可は必須
+- 監査可能性と並行実行安全性を第一級の関心事として扱う
+- 本番依存関係には導入理由が必要
+- 基盤となるArchitecture DecisionにはAccepted状態のADRが必要
 
-## Not fixed
+## 未固定
 
-No framework, database, cloud provider, API style, ORM, message broker, authentication service, or deployment platform is selected at project start.
+プロジェクト開始時点では、フレームワーク、DB、クラウドプロバイダ、API方式、ORM、メッセージブローカー、認証サービス、デプロイ先を選定しません。

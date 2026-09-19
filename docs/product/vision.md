@@ -1,17 +1,19 @@
-# Product Vision
+# プロダクトビジョン
 
-## Working name
+## 仮称
 
 Approval Flow
 
-## Problem
+## 解決したい課題
 
-Teams frequently manage access requests, purchase requests, operational approvals, and similar workflows through chat, email, or ad-hoc spreadsheets. This makes status, responsibility, auditability, and policy enforcement difficult.
+チームでは、アクセス権申請、購買申請、運用上の承認などをチャット、メール、場当たり的なスプレッドシートで管理することがあります。
+その結果、現在の状態、担当者、監査可能性、ポリシー適用が不透明になりやすくなります。
 
-## Product goal
+## プロダクトゴール
 
-Provide a web application in which organization members can submit requests, route them through configurable approval workflows, make approval decisions, and inspect an auditable history.
+組織メンバーが申請を作成し、設定可能な承認ワークフローに流し、承認判断を行い、その履歴を監査可能な形で確認できるWebアプリケーションを提供します。
 
-## Experiment goal
+## 実験としてのゴール
 
-The product is intentionally complex enough to force meaningful product and architecture decisions. The purpose of the repository is to evaluate AI-driven development practices rather than optimize for fastest possible delivery.
+このプロダクトは、意味のあるProduct Decision / Architecture Decisionを自然に発生させる程度の複雑さを意図的に持たせています。
+最速で完成させることではなく、AI駆動開発の実践方法を評価することが目的です。

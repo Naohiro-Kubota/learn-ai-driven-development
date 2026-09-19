@@ -1,4 +1,4 @@
-# AI-Driven Development Lab
+# AI駆動開発ラボ
 
 Codex を主エージェントとして、AI駆動開発のプロセスそのものを検証するための実験用リポジトリです。
 
@@ -6,7 +6,7 @@ Codex を主エージェントとして、AI駆動開発のプロセスそのも
 
 「AIがコードを書けるか」ではなく、以下を検証します。
 
-- 要求・制約・既存DecisionをAIが正しく参照できるか
+- 要求・制約・既存のDecisionをAIが正しく参照できるか
 - 重要な意思決定が必要な場面をAIが検出できるか
 - ADR / Product Decision Record を提案し、人間の承認を待てるか
 - 承認済みDecisionと整合する実装・テスト・ドキュメント更新を行えるか
@@ -15,9 +15,9 @@ Codex を主エージェントとして、AI駆動開発のプロセスそのも
 
 ## 固定する技術制約
 
-- Frontend language: TypeScript
-- Backend language: Go
-- Primary coding agent: Codex
+- フロントエンド言語: TypeScript
+- バックエンド言語: Go
+- 主たるコーディングエージェント: Codex
 
 フレームワーク、主要ライブラリ、データストア、API方式、認証方式、非同期処理方式などは初期状態では決定しません。
 重要な選定は ADR として提案し、人間が承認してから採用します。
