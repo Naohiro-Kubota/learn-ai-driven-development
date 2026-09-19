@@ -1,49 +1,53 @@
-# TASK-001: Propose foundational architecture decisions
+# TASK-001: 基盤となるArchitecture Decisionを提案する
 
 ## Goal
 
-Prepare the minimum set of architecture decisions required before the first vertical slice can be implemented.
+最初のVertical Sliceを実装する前に必要となる、最小限のArchitecture Decisionを準備してください。
 
-## Instructions to Codex
+## Codexへの指示
 
-Read:
+以下を読むこと。
+
 - `AGENTS.md`
 - `docs/product/vision.md`
 - `docs/product/requirements.md`
 - `docs/architecture/constraints.md`
 - `docs/decisions/README.md`
-- relevant files under `skills/`
+- `skills/` 配下の関連ファイル
 
-Do not implement production application code in this task.
+このタスクでは本番向けアプリケーションコードを実装してはいけません。
 
-Identify which foundational decisions are truly required for a first vertical slice consisting of:
+次のVertical Sliceに必要な基盤Decisionを特定してください。
 
-1. a user opens the web UI
-2. creates a draft request
-3. submits it
-4. an authorized approver sees the pending request
-5. approves it
-6. the requester sees the approved state
-7. the action is represented in audit history
+1. ユーザーがWeb UIを開く
+2. Draft申請を作成する
+3. 申請をSubmitする
+4. 権限を持つApproverがPending申請を確認する
+5. ApproverがApproveする
+6. RequesterがApproved状態を確認する
+7. これらの操作がAudit Historyへ記録される
 
-Avoid deciding infrastructure that the first slice does not require.
+最初のSliceで不要なInfrastructureまで先回りして決めないでください。
 
-For each required significant decision:
-- create a Proposed ADR
-- compare 2-4 viable options
-- define decision drivers
-- recommend one option
-- include consequences and revisit conditions
+必要な重要Decisionごとに:
 
-At minimum, assess whether decisions are needed for:
-- frontend application framework
-- backend HTTP/API approach
-- frontend/backend contract style
-- persistence
-- database access
-- migrations
-- authentication/authorization for the first slice
-- testing strategy
+- Proposed ADRを作成する
+- 実現可能な選択肢を2〜4個比較する
+- Decision driversを定義する
+- 推奨案を示す
+- ConsequencesとRevisit conditionsを記載する
 
-Do not mark any ADR Accepted.
-End with a compact list of human approvals needed before implementation.
+最低限、以下についてDecisionが必要か評価してください。
+
+- フロントエンドアプリケーションフレームワーク
+- バックエンドHTTP/API方式
+- Frontend / Backend契約方式
+- Persistence
+- DBアクセス
+- Migration
+- 最初のSliceにおけるAuthentication / Authorization
+- Testing strategy
+
+ADRをAcceptedにしてはいけません。
+
+最後に、実装開始前に必要なHuman Approvalを簡潔に一覧化してください。

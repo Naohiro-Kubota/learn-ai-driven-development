@@ -1,154 +1,177 @@
-# Project Instructions for Codex
+# Codex向けプロジェクト指示
 
-## 1. Mission
+## 1. ミッション
 
-This repository is an experiment in AI-driven software development.
+このリポジトリは、AI駆動開発を検証するための実験環境です。
 
-Your goal is not merely to produce working code. You must preserve decision traceability, respect human approval gates, keep documentation synchronized, and provide evidence that changes satisfy the requested behavior.
+目標は、単に動くコードを生成することではありません。
+意思決定の追跡可能性を維持し、人間による承認ゲートを守り、ドキュメントとの整合性を保ち、変更が要求を満たしていることを検証可能な形で示してください。
 
-## 2. Fixed constraints
+## 2. 固定された制約
 
-- Frontend implementation language: TypeScript
-- Backend implementation language: Go
-- Do not assume a frontend framework, backend HTTP framework, database, ORM/query library, migration tool, state-management library, authentication provider, message broker, or test framework unless an Accepted decision explicitly selects it.
-- Prefer the smallest set of dependencies that satisfies Accepted requirements and decisions.
+- フロントエンド実装言語: TypeScript
+- バックエンド実装言語: Go
+- Accepted 状態のDecisionで明示的に選定されていない限り、フロントエンドフレームワーク、バックエンドHTTPフレームワーク、DB、ORM/クエリライブラリ、マイグレーションツール、状態管理ライブラリ、認証プロバイダ、メッセージブローカー、テストフレームワークを前提として扱わないこと
+- Acceptedな要求・Decisionを満たす範囲で、依存関係は最小限にすること
 
-## 3. Authority order
+## 3. 情報の優先順位
 
-When instructions conflict, use this order:
+指示が競合する場合は、以下の順序を優先してください。
 
-1. Explicit human instruction in the current task
-2. Accepted Product Decision Records
-3. Accepted Architecture Decision Records
-4. Product requirements and architecture constraints
-5. This AGENTS.md
-6. Project knowledge / skills
-7. Existing code conventions
+1. 現在のタスクにおける人間からの明示的な指示
+2. Accepted 状態の Product Decision Record
+3. Accepted 状態の Architecture Decision Record
+4. プロダクト要求・アーキテクチャ制約
+5. この `AGENTS.md`
+6. プロジェクト内のKnowledge / Skills
+7. 既存コードの慣習
 
-If you discover a conflict between higher and lower authority sources, do not silently resolve it. Report the conflict and propose the appropriate document change.
+上位と下位の情報源に矛盾を発見した場合、暗黙的に解決してはいけません。
+矛盾を報告し、必要なドキュメント変更を提案してください。
 
-## 4. Human approval gate
+## 4. 人間による承認ゲート
 
-Before production implementation, determine whether the requested work requires a new significant decision.
+本番向け実装を始める前に、依頼された作業が新たな重要な意思決定を必要とするか確認してください。
 
-A significant decision includes a choice that is costly to reverse, affects multiple modules, establishes a reusable project convention, changes security/data consistency/operability characteristics, or introduces a foundational dependency.
+重要な意思決定とは、たとえば以下のいずれかを満たすものです。
 
-Examples:
-- frontend framework
-- backend web/API framework
-- API interaction style or contract strategy
-- persistent datastore
-- database access strategy
-- authentication / authorization architecture
-- asynchronous processing architecture
-- migration strategy
-- cross-cutting observability architecture
+- 後から覆すコストが高い
+- 複数モジュールへ影響する
+- プロジェクト共通の慣習を新たに作る
+- セキュリティ、データ整合性、運用性に影響する
+- 基盤となる依存関係を導入する
 
-When a significant decision is required:
+例:
 
-1. Investigate the context and constraints.
-2. Propose 2-4 viable options.
-3. Compare trade-offs against explicit criteria.
-4. Create or update a Proposed ADR or Product Decision Record.
-5. State the recommended option and why.
-6. STOP before production implementation.
-7. Ask for human approval of the Decision Record.
+- フロントエンドフレームワーク
+- バックエンドWeb/APIフレームワーク
+- API連携方式・契約方式
+- 永続化データストア
+- DBアクセス方式
+- 認証・認可アーキテクチャ
+- 非同期処理アーキテクチャ
+- マイグレーション戦略
+- 横断的なObservability設計
 
-You may perform non-production spikes only when explicitly requested. A spike must not be silently promoted into production code.
+重要な意思決定が必要な場合:
 
-## 5. Product decisions vs architecture decisions
+1. コンテキストと制約を調査する
+2. 実現可能な選択肢を2〜4個提示する
+3. 明示した評価基準に基づいてトレードオフを比較する
+4. Proposed 状態の ADR または Product Decision Record を作成・更新する
+5. 推奨案と理由を明示する
+6. 本番向け実装を開始せず、そこで停止する
+7. Decision Recordについて人間の承認を求める
 
-Create a Product Decision Record when the primary question is "What behavior or business rule should the product have?"
+明示的に依頼された場合に限り、非本番向けのSpikeを行って構いません。
+Spikeを暗黙的に本番コードへ昇格させてはいけません。
 
-Create an ADR when the primary question is "How should the system be structured or what technical approach should it adopt?"
+## 5. Product Decision と Architecture Decision の使い分け
 
-If both are involved, separate them and link the records.
+主な問いが「プロダクトはどのような振る舞い・業務ルールを持つべきか」である場合、Product Decision Recordを作成してください。
 
-## 6. Decision status rules
+主な問いが「システムをどのように構造化するか・どの技術的アプローチを採用するか」である場合、ADRを作成してください。
 
-Valid statuses:
+両方が関係する場合は分離し、相互リンクしてください。
+
+## 6. Decisionのステータス
+
+有効なステータス:
 
 - Proposed
 - Accepted
 - Rejected
 - Superseded
 
-Only Accepted decisions are normative.
+規範として扱えるのは Accepted 状態のDecisionのみです。
 
-Do not modify an Accepted decision to rewrite history. If a decision changes materially, create a new record and mark the old one Superseded with a link.
+Accepted状態のDecisionを後から書き換えて履歴を消してはいけません。
+重要な判断が変わる場合、新しいRecordを作成し、古いRecordを `Superseded` にしてリンクしてください。
 
-## 7. Task workflow
+## 7. タスク実行フロー
 
-For every non-trivial task:
+自明でないタスクでは必ず以下を行ってください。
 
-1. Read the relevant requirements and Accepted decisions.
-2. Summarize the constraints you found.
-3. Identify whether a new Decision Record is required.
-4. If approval is required, create the proposal and stop.
-5. If no approval is required, implement the smallest coherent change.
-6. Add or update tests.
-7. Run available formatters, linters, type checks, and tests.
-8. Update affected documentation.
-9. Report:
-   - files changed
-   - decisions relied upon
-   - validation commands and results
-   - unresolved risks / assumptions
-   - follow-up decisions, if any
+1. 関連する要求とAccepted Decisionを読む
+2. 発見した制約を要約する
+3. 新しいDecision Recordが必要か判断する
+4. 承認が必要なら提案を作成して停止する
+5. 承認が不要なら、整合性を保った最小の変更を実装する
+6. テストを追加・更新する
+7. 利用可能なformatter、linter、型チェック、テストを実行する
+8. 関係するドキュメントを更新する
+9. 以下を報告する
+   - 変更したファイル
+   - 依拠したDecision
+   - 実行した検証コマンドと結果
+   - 未解決リスク / 仮定
+   - 今後必要となるDecision
 
-## 8. Dependency policy
+## 8. 依存関係ポリシー
 
-Do not add a new production dependency merely because it is familiar or popular.
+慣れている、あるいは人気があるという理由だけで、新しい本番依存関係を追加してはいけません。
 
-For each new dependency:
-- identify the requirement it satisfies
-- check whether the standard library or an existing dependency is sufficient
-- consider maintenance, ecosystem maturity, security, testability, operational cost, and lock-in
-- use an ADR when the dependency is foundational or establishes project-wide architecture
-- keep narrowly scoped/reversible dependencies lightweight; document the rationale in the PR/task summary when no ADR is needed
+新しい依存関係ごとに以下を確認してください。
 
-## 9. Implementation principles
+- どの要求を満たすために必要か
+- 標準ライブラリや既存依存で十分ではないか
+- 保守性
+- エコシステム成熟度
+- セキュリティ
+- テスト容易性
+- 運用コスト
+- ロックイン
+- 退出・移行方法
 
-- Keep domain/business rules isolated from infrastructure-specific code where practical.
-- Make state transitions explicit and testable.
-- Treat authorization as a server-side responsibility.
-- Treat auditability and concurrency behavior as first-class requirements.
-- Prefer explicit contracts over hidden framework behavior.
-- Do not weaken tests or quality gates merely to make CI pass.
-- Do not delete failing tests unless the corresponding requirement or decision changed and that change is approved.
+プロジェクト全体の基盤となる依存関係についてはADRを作成してください。
+局所的で容易に差し替え可能な依存関係については、ADRが不要でもタスク/PRサマリに理由を記録してください。
 
-## 10. Documentation synchronization
+## 9. 実装原則
 
-When behavior changes, check:
+- 実用上可能な限り、ドメイン/業務ルールをインフラ固有コードから分離する
+- 状態遷移を明示し、テスト可能にする
+- 認可はサーバー側の責務として扱う
+- 監査可能性と並行実行時の振る舞いを第一級の要求として扱う
+- フレームワークの暗黙挙動より、明示的な契約を優先する
+- CIを通すためだけにテストや品質ゲートを弱めてはいけない
+- 対応する要求・Decisionが変更され承認済みでない限り、失敗するテストを削除してはいけない
+
+## 10. ドキュメント同期
+
+振る舞いを変更した場合、以下を確認してください。
+
 - `docs/product/requirements.md`
-- relevant Product Decision Records
-- relevant ADRs
-- API/architecture documentation once created
+- 関連する Product Decision Record
+- 関連する ADR
+- 作成済みであればAPI/Architecture文書
 
-When architecture changes, check:
-- architecture overview
-- relevant ADRs
-- development instructions
-- CI/tooling documentation
+アーキテクチャを変更した場合、以下を確認してください。
 
-## 11. Project knowledge
+- Architecture概要
+- 関連するADR
+- 開発者向け指示
+- CI/Tooling文書
 
-When touching Go, read `skills/go-development/SKILL.md`.
+## 11. プロジェクトKnowledge
 
-When proposing API design, read `skills/api-design/SKILL.md`.
+Goを変更する場合、`skills/go-development/SKILL.md` を読んでください。
 
-When evaluating a dependency, read `skills/dependency-selection/SKILL.md`.
+API設計を提案・変更する場合、`skills/api-design/SKILL.md` を読んでください。
 
-These files are project-local knowledge. Their guidance is subordinate to Accepted decisions.
+依存関係を評価する場合、`skills/dependency-selection/SKILL.md` を読んでください。
 
-## 12. Definition of done
+これらはプロジェクトローカルのKnowledgeです。
+Accepted Decisionより優先してはいけません。
 
-A task is not done until:
-- requested behavior is implemented
-- appropriate tests exist and pass
-- relevant quality checks pass
-- no unapproved significant architectural/product decision was smuggled into implementation
-- docs are synchronized
-- decision traceability is stated in the completion report
+## 12. Definition of Done
 
-See `docs/development/definition-of-done.md`.
+タスクは以下を満たすまで完了ではありません。
+
+- 要求された振る舞いが実装されている
+- 適切なテストが存在し成功している
+- 関係する品質チェックが成功している
+- 未承認の重要なArchitecture/Product Decisionが実装に紛れ込んでいない
+- ドキュメントが同期されている
+- 完了報告にDecisionのトレーサビリティが記載されている
+
+詳細は `docs/development/definition-of-done.md` を参照してください。

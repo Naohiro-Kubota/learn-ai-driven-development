@@ -1,4 +1,4 @@
-# ADR-NNN: <decision title>
+# ADR-NNN: <意思決定タイトル>
 
 - Status: Proposed
 - Date: YYYY-MM-DD
@@ -9,43 +9,43 @@
 
 ## Context
 
-What problem requires a decision?
-What constraints matter?
+何を決定する必要があるのか。
+どのような制約があるのか。
 
 ## Decision drivers
 
-- Driver 1
-- Driver 2
+- 評価軸1
+- 評価軸2
 
 ## Options considered
 
 ### Option A
 
-Description.
+概要。
 
-**Advantages**
+**利点**
 - ...
 
-**Disadvantages**
+**欠点**
 - ...
 
 ### Option B
 
-Description.
+概要。
 
-**Advantages**
+**利点**
 - ...
 
-**Disadvantages**
+**欠点**
 - ...
 
 ## Decision
 
-Proposed recommendation or Accepted choice.
+Proposed状態では推奨案、Accepted状態では確定した選択を記載する。
 
 ## Rationale
 
-Why this option best satisfies the decision drivers.
+なぜこの選択肢がDecision driversを最も満たすのか。
 
 ## Consequences
 
@@ -57,8 +57,8 @@ Why this option best satisfies the decision drivers.
 
 ## Validation
 
-How we will verify this decision works as intended.
+このDecisionが意図どおり機能することを、どのように確認するか。
 
 ## Revisit conditions
 
-Concrete conditions that should trigger reconsideration.
+どのような具体的条件が発生したら再検討するか。

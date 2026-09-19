@@ -1,11 +1,11 @@
-# API Design Knowledge
+# API設計Knowledge
 
-Use when proposing or changing a frontend/backend contract.
+Frontend / Backend間の契約を提案・変更する場合に使用します。
 
-- Start from product use cases and domain language.
-- Make authorization and error semantics explicit.
-- Define concurrency behavior for state-changing operations.
-- Avoid leaking internal persistence representation into public contracts without rationale.
-- Consider idempotency and retry behavior.
-- Treat compatibility/versioning as a deliberate decision.
-- If choosing REST, RPC, GraphQL, generated clients, schema-first tooling, or another project-wide contract approach, create an ADR before implementation.
+- Product use case と Domain language から設計を開始する
+- Authorization と Error semantics を明示する
+- 状態変更操作に対するConcurrency behaviorを定義する
+- 理由なく内部Persistence representationをPublic Contractへ漏らさない
+- Idempotency と retry behavior を検討する
+- Compatibility / Versioningを意識的なDecisionとして扱う
+- REST、RPC、GraphQL、Generated Client、Schema-first Toolingなど、プロジェクト全体へ影響する契約方式を選択する場合は実装前にADRを作成する

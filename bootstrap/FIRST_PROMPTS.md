@@ -1,27 +1,29 @@
-# Suggested first Codex prompts
+# Codexへ最初に渡すプロンプト例
 
-## Prompt 1 — repository comprehension
+## Prompt 1 — リポジトリ理解
 
-Read the repository instructions and product documents. Do not write production code.
+リポジトリ内の指示とプロダクト文書を読んでください。
+本番向けコードは書かないでください。
 
-Summarize:
-1. the product goal
-2. fixed constraints
-3. what is intentionally undecided
-4. the human/Codex responsibility boundary
-5. situations in which you must stop for human approval
+以下を要約してください。
 
-Also identify any contradiction or ambiguity in the repository instructions.
+1. プロダクトの目的
+2. 固定された制約
+3. 意図的に未決定としている事項
+4. Human / Codex の責任分界
+5. Human Approvalのために停止しなければならない条件
 
-## Prompt 2 — foundational decisions
+また、リポジトリ内の指示に矛盾または曖昧さがあれば指摘してください。
 
-Execute `tasks/TASK-001-foundation-decisions.md`.
+## Prompt 2 — 基盤Decision
 
-Do not implement production application code.
-Create Proposed ADRs only and stop for human approval.
+`tasks/TASK-001-foundation-decisions.md` を実行してください。
 
-## Prompt 3 — after human approval
+本番向けアプリケーションコードは実装しないでください。
+Proposed ADRのみ作成し、人間の承認待ちで停止してください。
 
-After I explicitly Accept the required ADRs, execute `tasks/TASK-002-first-vertical-slice.md`.
+## Prompt 3 — Human Approval後
 
-Before implementation, list the Accepted decisions you are relying on and identify any remaining approval gate.
+必要なADRを私が明示的にAcceptした後、`tasks/TASK-002-first-vertical-slice.md` を実行してください。
+
+実装前に、今回依拠するAccepted Decisionを一覧化し、残っているApproval Gateがあれば示してください。

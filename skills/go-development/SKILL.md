@@ -1,22 +1,23 @@
-# Go Development Knowledge
+# Go開発Knowledge
 
-Use this knowledge when modifying Go code.
+Goコードを変更する場合に使用してください。
 
-## Purpose
+## 目的
 
-Produce modern, readable, testable Go while preserving project decisions.
+Project Decisionを守りながら、モダンで読みやすく、テストしやすいGoコードを作成します。
 
 ## Guidance
 
-- Prefer standard-library capabilities when they are sufficient.
-- Keep packages cohesive and boundaries explicit.
-- Pass `context.Context` through operations that may block, perform I/O, or have request lifetime semantics.
-- Return errors with useful context while preserving error identity when callers need it.
-- Avoid framework-specific coupling in core business rules unless an Accepted ADR explicitly chooses that trade-off.
-- Make concurrency ownership and cancellation explicit.
-- Favor table-driven tests when they improve coverage and readability.
-- Run the repository's formatter, static analysis, and tests before completion.
+- 標準ライブラリで十分な場合は優先する
+- Packageは凝集度を高くし、境界を明示する
+- Blocking、I/O、Request Lifetimeの意味を持つ処理には `context.Context` を適切に伝播する
+- 呼び出し側でError Identityが必要な場合は、それを保ちながら有用な文脈を付与する
+- Accepted ADRが明示的に選択していない限り、Core Business RuleをFramework固有コードへ強く結合しない
+- Concurrency ownership と cancellation を明示する
+- Coverageと可読性が向上する場合はTable-driven testを活用する
+- 完了前にRepositoryで定義されたformatter、static analysis、testを実行する
 
-## External reference
+## 外部参照
 
-The project may evaluate JetBrains' `go-modern-guidelines` as a knowledge source. If using external guidance, verify the relevant guidance is current and does not conflict with Accepted project decisions.
+プロジェクトではJetBrainsの `go-modern-guidelines` をKnowledge Source候補として評価してよい。
+外部Guidanceを利用する場合は、内容が現時点で有効か確認し、Accepted Project Decisionと競合しないことを確認する。

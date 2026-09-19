@@ -1,96 +1,98 @@
-# Product Requirements
+# プロダクト要求
 
 Status: Initial baseline
 
-These requirements define intended capabilities. Details marked as undecided must be resolved through Product Decision Records or ADRs before implementation when they affect significant behavior or architecture.
+この文書は、プロダクトが持つべき能力を定義します。
+重要な振る舞いまたはアーキテクチャへ影響する未決定事項は、実装前に Product Decision Record または ADR により解決してください。
 
-## Functional requirements
+## 機能要求
 
-### FR-001 Organization membership
-The system shall represent organizations and their members.
+### FR-001 組織メンバーシップ
+システムは組織と、その組織に所属するメンバーを表現できること。
 
-### FR-002 Roles and authorization
-The system shall support at least administrators, requesters, and approvers.
-Detailed permission rules are not yet decided.
+### FR-002 ロールと認可
+システムは少なくとも管理者、申請者、承認者を扱えること。
+詳細な権限ルールは未決定。
 
-### FR-003 Request lifecycle
-A member shall be able to create a draft request and submit it for approval.
+### FR-003 申請ライフサイクル
+メンバーは申請をDraftとして作成し、承認依頼として提出できること。
 
-### FR-004 Approval workflow
-A submitted request shall proceed through one or more approval steps.
-Whether parallel approval, quorum approval, delegation, or conditional routing is supported is initially undecided.
+### FR-004 承認ワークフロー
+提出済み申請は1つ以上の承認ステップを通過すること。
+並列承認、定足数、代理承認、条件分岐をサポートするかは初期状態では未決定。
 
-### FR-005 Approval actions
-An authorized approver shall be able to approve or reject a pending request.
-Comment behavior and mandatory rejection reasons are initially undecided.
+### FR-005 承認操作
+権限を持つ承認者は、Pending状態の申請をApproveまたはRejectできること。
+コメント仕様や却下理由を必須とするかは未決定。
 
-### FR-006 Cancellation
-A requester shall be able to cancel a request in some lifecycle states.
-Exact cancellation rules require a Product Decision Record.
+### FR-006 キャンセル
+申請者は、特定のライフサイクル状態にある申請をキャンセルできること。
+正確なキャンセルルールは Product Decision Record で決定する。
 
-### FR-007 Audit history
-Important changes to requests and approval actions shall be auditable.
-Audit records must allow the system to explain who performed an action and when.
+### FR-007 監査履歴
+申請や承認操作に対する重要な変更は監査可能であること。
+監査記録から、誰がいつ操作したか説明できること。
 
-### FR-008 Notifications
-Relevant users shall be notified when actions require their attention or a request reaches a meaningful state.
-Delivery channels and asynchronous architecture are undecided.
+### FR-008 通知
+対応が必要になったとき、または申請が重要な状態へ到達したとき、関係者へ通知できること。
+通知チャネルおよび非同期処理アーキテクチャは未決定。
 
-### FR-009 Search and filtering
-Users shall be able to view and filter requests relevant to them.
+### FR-009 検索とフィルタ
+ユーザーは自分に関係する申請を表示し、絞り込みできること。
 
-### FR-010 Workflow administration
-An administrator shall be able to define or manage approval workflow configuration.
-The exact configuration model is undecided.
+### FR-010 ワークフロー管理
+管理者は承認ワークフローの設定を定義・管理できること。
+正確な設定モデルは未決定。
 
-### FR-011 Concurrency safety
-The system shall behave deterministically when multiple actors attempt conflicting actions on the same request.
+### FR-011 並行実行安全性
+複数ユーザーが同一申請に対して競合する操作を行った場合でも、システムは決定論的に振る舞うこと。
 
-### FR-012 Web user interface
-The primary user experience shall be a browser-based frontend written in TypeScript.
+### FR-012 Web UI
+主要なユーザー体験は、TypeScriptで記述されたブラウザベースのフロントエンドとして提供すること。
 
 ### FR-013 Backend
-Backend application code shall be written in Go.
+バックエンドアプリケーションコードはGoで記述すること。
 
-## Non-functional requirements
+## 非機能要求
 
-### NFR-001 Security
-Authentication and authorization must be designed explicitly. Authorization must not rely only on frontend enforcement.
+### NFR-001 セキュリティ
+認証と認可は明示的に設計すること。
+認可をフロントエンドだけに依存させてはいけない。
 
-### NFR-002 Traceability
-Significant product and architecture choices must be traceable to Decision Records.
+### NFR-002 トレーサビリティ
+重要なProduct/Architecture DecisionはDecision Recordまで追跡可能であること。
 
-### NFR-003 Testability
-Business rules and state transitions must be testable without requiring a full end-to-end environment for every test.
+### NFR-003 テスト容易性
+業務ルールと状態遷移は、すべてのケースで完全なE2E環境を必要とせずテストできること。
 
-### NFR-004 Maintainability
-The implementation should favor clear boundaries and a dependency set small enough to understand and maintain.
+### NFR-004 保守性
+実装は明確な境界を優先し、依存関係は理解・保守可能な規模に抑えること。
 
 ### NFR-005 Observability
-The system must provide enough operational signals to diagnose failed requests and background processing once those mechanisms exist.
+該当する仕組みを導入した後は、失敗したリクエストやバックグラウンド処理を診断できる運用シグナルを提供すること。
 
-### NFR-006 Local development
-A new developer should eventually be able to run the application and required services locally using documented commands.
+### NFR-006 ローカル開発
+最終的に、新しい開発者が文書化されたコマンドでアプリケーションと必要サービスをローカル起動できること。
 
-## Explicitly undecided at project start
+## プロジェクト開始時点で明示的に未決定の項目
 
-The following are intentionally not selected yet:
+以下は意図的に未選定です。
 
-- frontend framework
-- frontend routing approach
-- frontend server-state / client-state strategy
-- frontend component library
-- backend HTTP/router framework
-- API style and contract strategy
-- persistent datastore
-- database access strategy
-- migration tool
-- authentication mechanism/provider
-- authorization model details
-- asynchronous processing mechanism
-- notification channel(s)
-- deployment platform
-- observability stack
-- test frameworks and test pyramid details
+- フロントエンドフレームワーク
+- フロントエンドルーティング方式
+- Server State / Client State 管理方式
+- UIコンポーネントライブラリ
+- バックエンドHTTP/routerフレームワーク
+- API方式および契約戦略
+- 永続化データストア
+- DBアクセス方式
+- マイグレーションツール
+- 認証方式 / プロバイダ
+- 認可モデル詳細
+- 非同期処理方式
+- 通知チャネル
+- デプロイ先
+- Observabilityスタック
+- テストフレームワークおよびテストピラミッド詳細
 
-Selecting these without the appropriate Decision Record defeats the experiment.
+これらを適切なDecision Recordなしで決定すると、今回の実験目的を損ないます。

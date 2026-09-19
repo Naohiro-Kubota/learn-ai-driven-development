@@ -1,23 +1,23 @@
-# TASK-002: Implement the first vertical slice
+# TASK-002: 最初のVertical Sliceを実装する
 
-Status: BLOCKED until the foundational ADRs required by TASK-001 are Accepted.
+Status: TASK-001で必要と判断された基盤ADRがAcceptedになるまでBLOCKED。
 
 ## Goal
 
-Implement the smallest end-to-end slice that demonstrates:
+以下を実証する最小のEnd-to-End Sliceを実装してください。
 
-- create draft request
-- submit request
-- view pending approval
-- approve request
-- view approved result
-- audit history for the above actions
+- Draft申請作成
+- Request Submit
+- Pending approval表示
+- Request Approve
+- Approved result表示
+- 上記操作のAudit History表示
 
 ## Rules
 
-- Read all relevant Accepted ADRs and PDRs first.
-- If the requirements expose an unresolved significant product behavior, propose a PDR and stop at the approval gate for that behavior.
-- Do not introduce a foundational dependency not covered by Accepted decisions.
-- Add tests appropriate to the Accepted testing strategy.
-- Update documentation.
-- Report traceability and validation evidence.
+- 最初に関連するAccepted ADR / PDRをすべて読む
+- 要求から未解決の重要なProduct Behaviorが見つかった場合、PDRを提案し、そのBehaviorについては承認ゲートで停止する
+- Accepted Decisionで扱われていない基盤Dependencyを追加しない
+- Accepted Testing Strategyに沿ったテストを追加する
+- ドキュメントを更新する
+- TraceabilityとValidation evidenceを報告する

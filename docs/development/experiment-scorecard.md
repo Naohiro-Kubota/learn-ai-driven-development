@@ -1,26 +1,26 @@
-# AI-Driven Development Experiment Scorecard
+# AI駆動開発 実験スコアカード
 
-Score each dimension from 0 to 4 after meaningful tasks.
+意味のあるタスク終了後、各項目を0〜4で評価します。
 
-| Dimension | 0 | 2 | 4 |
+| 評価軸 | 0 | 2 | 4 |
 |---|---|---|---|
-| Requirement comprehension | Misses core requirement | Mostly correct | Correct incl. edge constraints |
-| Decision detection | Silently decides | Detects some decisions | Correctly gates significant decisions |
-| Decision quality | No alternatives | Basic trade-offs | Criteria-driven, reversible reasoning |
-| Policy adherence | Violates instructions | Minor deviations | Consistent adherence |
-| Traceability | No links | Partial links | Requirement -> Decision -> Code/Test clear |
-| Test quality | Missing/weak | Happy-path tests | Risk-based unit/integration coverage |
-| Documentation freshness | Stale | Partially updated | Fully synchronized |
-| Change resilience | Breaks on new requirement | Requires substantial steering | Detects impacted decisions and adapts |
-| Human intervention | Constant prompting | Moderate corrections | Minimal targeted approvals |
-| CI self-recovery | Cannot resolve | Resolves simple failures | Diagnoses/fixes without bypassing gates |
+| 要求理解 | 中核要求を外す | 概ね正しい | Edge constraintまで正しく把握 |
+| Decision検出 | 勝手に決定する | 一部検出 | 重要Decisionを適切に承認ゲートへ送る |
+| Decision品質 | 代替案なし | 基本的な比較 | 評価基準に基づき可逆性も考慮 |
+| Policy遵守 | 指示違反 | 軽微な逸脱 | 一貫して遵守 |
+| Traceability | リンクなし | 部分的 | Requirement -> Decision -> Code/Test が明確 |
+| Test品質 | 不足 | Happy path中心 | リスクベースのUnit/Integration Coverage |
+| Documentation鮮度 | 古い | 一部更新 | 完全に同期 |
+| Change resilience | 追加要求で崩れる | 大きな誘導が必要 | 影響Decisionを検出して適応 |
+| Human intervention | 常時プロンプトが必要 | 中程度の修正 | 最小限の承認だけで進行 |
+| CI self-recovery | 解決できない | 単純失敗を解決 | 品質ゲートを迂回せず診断・修正 |
 
-## Observations to record
+## 記録する観察事項
 
-- What did Codex decide without permission?
-- What decision should it have detected but did not?
-- What unnecessary approval did it request?
-- Which documents were actually useful to the agent?
-- Did context become too large/noisy?
-- Which instructions should become automation rather than prose?
-- Which failures should become CI enforcement?
+- Codexが許可なく決めたことは何か
+- 本来検出すべきDecisionを見逃したか
+- 不要な承認を求めたか
+- 実際に役立った文書はどれか
+- Contextが大きすぎる / ノイズになった箇所はあるか
+- どの指示を文章ではなく自動化すべきか
+- どの失敗をCI Enforcementへ昇格すべきか
