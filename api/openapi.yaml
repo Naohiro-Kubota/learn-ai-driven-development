@@ -1,0 +1,659 @@
+openapi: 3.1.1
+info:
+  title: Approval Flow API
+  version: 1.0.0
+  description: |
+    最初のVertical SliceのブラウザUIとGoバックエンド間の契約。
+    resource APIは /api/v1 を使用する。OIDC browser handoffは /auth/oidc に置く。
+servers:
+  - url: /
+tags:
+  - name: Authentication
+  - name: Session
+  - name: Requests
+  - name: Approvals
+  - name: Audit
+paths:
+  /auth/oidc/login:
+    get:
+      tags: [Authentication]
+      operationId: beginOidcLogin
+      summary: Start an OIDC Authorization Code Flow with PKCE
+      responses:
+        '302':
+          description: Redirect to the configured OIDC authorization endpoint.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri
+            Set-Cookie:
+              description: Short-lived OIDC authentication transaction cookie.
+              schema:
+                type: string
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /auth/oidc/callback:
+    get:
+      tags: [Authentication]
+      operationId: completeOidcLogin
+      summary: Validate the OIDC callback and establish an application session
+      description: |
+        The callback consumes the one-time authentication transaction. On success,
+        it issues a new application session cookie and redirects to the UI. A
+        callback must provide either `code` and `state`, or an OAuth error.
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: error_description
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Session established and browser redirected to the UI.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+            Set-Cookie:
+              description: New application session cookie.
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/InvalidAuthTransaction'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/session:
+    get:
+      tags: [Session]
+      operationId: getCurrentSession
+      summary: Get the current actor and a CSRF token
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Current authenticated session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+  /api/v1/session/logout:
+    post:
+      tags: [Session]
+      operationId: logout
+      summary: Revoke the current session
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      responses:
+        '204':
+          description: Session revoked and cookie cleared.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
+  /api/v1/requests:
+    post:
+      tags: [Requests]
+      operationId: createRequest
+      summary: Create a Draft request
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRequestInput'
+      responses:
+        '201':
+          description: Draft request created.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
+  /api/v1/requests/pending:
+    get:
+      tags: [Requests]
+      operationId: listPendingRequests
+      summary: List Pending requests assigned to the current Approver
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Requests assigned to the current Approver, ordered by submitted time ascending.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingRequestList'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/requests/{requestId}:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    get:
+      tags: [Requests]
+      operationId: getRequest
+      summary: Get a Request visible to the current actor
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Request representation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '404':
+          $ref: '#/components/responses/RequestNotFound'
+    patch:
+      tags: [Requests]
+      operationId: updateDraftRequest
+      summary: Replace the editable content of the current Requester's Draft
+      description: Title and description become immutable after Submit.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDraftRequestInput'
+      responses:
+        '200':
+          description: Draft updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
+        '404':
+          $ref: '#/components/responses/RequestNotFound'
+        '409':
+          $ref: '#/components/responses/RequestMutationConflict'
+  /api/v1/requests/{requestId}/submit:
+    post:
+      tags: [Requests]
+      operationId: submitRequest
+      summary: Submit a Draft and assign the Organization default Approver
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpectedVersionInput'
+      responses:
+        '200':
+          description: Request transitioned to Pending with one assigned Approval.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
+        '404':
+          $ref: '#/components/responses/RequestNotFound'
+        '409':
+          $ref: '#/components/responses/RequestMutationConflict'
+  /api/v1/requests/{requestId}/approvals:
+    post:
+      tags: [Approvals]
+      operationId: approveRequest
+      summary: Approve the current actor's assigned Pending Request
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpectedVersionInput'
+      responses:
+        '200':
+          description: Request transitioned to Approved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
+        '404':
+          $ref: '#/components/responses/RequestNotFound'
+        '409':
+          $ref: '#/components/responses/RequestMutationConflict'
+  /api/v1/requests/{requestId}/audit-events:
+    get:
+      tags: [Audit]
+      operationId: listRequestAuditEvents
+      summary: List the visible Request's audit history
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Audit events in occurred-at ascending order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventList'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '404':
+          $ref: '#/components/responses/RequestNotFound'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-approval_flow_session
+      description: Opaque, server-side application session identifier.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Session-bound synchronizer token required for unsafe methods.
+  parameters:
+    RequestId:
+      name: requestId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      description: Opaque Request identifier.
+  responses:
+    InvalidRequest:
+      description: Invalid JSON, field validation failure, or invalid request shape.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: invalid_request
+            message: Request validation failed.
+            fieldErrors:
+              - field: title
+                code: required
+                message: Title must not be blank.
+    InvalidAuthTransaction:
+      description: Invalid, expired, or previously consumed OIDC authentication transaction.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: invalid_auth_transaction
+            message: The sign-in request is no longer valid.
+    AuthenticationRequired:
+      description: No valid application session is present.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: authentication_required
+            message: Authentication is required.
+    Forbidden:
+      description: Authenticated actor lacks permission for this state-changing operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: forbidden
+            message: You are not permitted to perform this operation.
+    ForbiddenOrCsrfValidationFailed:
+      description: Authenticated actor lacks permission, or CSRF token or allowed-origin validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            forbidden:
+              value:
+                code: forbidden
+                message: You are not permitted to perform this operation.
+            csrfValidationFailed:
+              value:
+                code: csrf_validation_failed
+                message: CSRF validation failed.
+    RequestNotFound:
+      description: Request does not exist or is not visible to the current actor.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: request_not_found
+            message: Request was not found.
+    RequestMutationConflict:
+      description: The Request version, state, or Approval routing prevents the mutation.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            versionConflict:
+              value:
+                code: version_conflict
+                message: Request changed. Retrieve the latest state before retrying.
+            invalidState:
+              value:
+                code: invalid_state
+                message: This operation is not valid for the current Request state.
+            routingUnavailable:
+              value:
+                code: approval_routing_unavailable
+                message: A default Approver cannot be assigned.
+    InternalServerError:
+      description: Unexpected server failure. Details are not exposed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: internal_error
+            message: An unexpected error occurred.
+  schemas:
+    Session:
+      type: object
+      additionalProperties: false
+      required: [actor, csrfToken]
+      properties:
+        actor:
+          $ref: '#/components/schemas/Actor'
+        csrfToken:
+          type: string
+          minLength: 1
+          description: Send as X-CSRF-Token for unsafe /api/v1 methods.
+    Actor:
+      type: object
+      additionalProperties: false
+      required: [memberId, roles]
+      properties:
+        memberId:
+          type: string
+          minLength: 1
+          description: Opaque application Member identifier.
+        roles:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [admin, requester, approver]
+    CreateRequestInput:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Leading and trailing whitespace is removed before validation and storage.
+        description:
+          type: string
+          maxLength: 2000
+          default: ''
+    UpdateDraftRequestInput:
+      type: object
+      additionalProperties: false
+      required: [title, description, expectedVersion]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Leading and trailing whitespace is removed before validation and storage.
+        description:
+          type: string
+          maxLength: 2000
+        expectedVersion:
+          $ref: '#/components/schemas/Version'
+    ExpectedVersionInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion:
+          $ref: '#/components/schemas/Version'
+    Version:
+      type: integer
+      format: int64
+      minimum: 1
+    Request:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - description
+        - status
+        - version
+        - requesterMemberId
+        - approval
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Opaque Request identifier.
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+        status:
+          type: string
+          enum: [draft, pending, approved]
+        version:
+          $ref: '#/components/schemas/Version'
+        requesterMemberId:
+          type: string
+          minLength: 1
+        approval:
+          oneOf:
+            - $ref: '#/components/schemas/Approval'
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Approval:
+      type: object
+      additionalProperties: false
+      required: [id, assigneeMemberId, status, approvedAt]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Opaque Approval identifier.
+        assigneeMemberId:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          enum: [pending, approved]
+        approvedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    PendingRequestList:
+      type: object
+      additionalProperties: false
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Request'
+    AuditEventList:
+      type: object
+      additionalProperties: false
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - type
+        - occurredAt
+        - actorMemberId
+        - requestContent
+        - approvalAssigneeMemberId
+        - approvalId
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Opaque Audit Event identifier.
+        type:
+          type: string
+          enum:
+            - request_created
+            - request_updated
+            - request_submitted
+            - request_approved
+        occurredAt:
+          type: string
+          format: date-time
+        actorMemberId:
+          type: string
+          minLength: 1
+        requestContent:
+          oneOf:
+            - $ref: '#/components/schemas/RequestContentSnapshot'
+            - type: 'null'
+        approvalAssigneeMemberId:
+          oneOf:
+            - type: string
+              minLength: 1
+            - type: 'null'
+        approvalId:
+          oneOf:
+            - type: string
+              minLength: 1
+            - type: 'null'
+    RequestContentSnapshot:
+      type: object
+      additionalProperties: false
+      required: [title, description]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - invalid_request
+            - invalid_auth_transaction
+            - authentication_required
+            - forbidden
+            - csrf_validation_failed
+            - request_not_found
+            - version_conflict
+            - invalid_state
+            - approval_routing_unavailable
+            - internal_error
+        message:
+          type: string
+        fieldErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+    FieldError:
+      type: object
+      additionalProperties: false
+      required: [field, code, message]
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
