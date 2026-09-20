@@ -2,9 +2,13 @@
 .idea/
 .vscode/
 node_modules/
+.pnpm-store/
 dist/
 build/
 coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
 tmp/
 .env
 .env.*
