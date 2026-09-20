@@ -1,51 +1,51 @@
-# Go API Implementation Plan
+# Go API実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **エージェント実行者向け:** この計画は、`superpowers:subagent-driven-development`（推奨）または`superpowers:executing-plans`を使い、タスク単位で実行すること。進捗はチェックボックス（`- [ ]`）で管理する。
 
-**Goal:** Implement the OpenAPI 3.1 contract for the initial Vertical Slice's authenticated Go HTTP API without adding unapproved application dependencies.
+**目的:** 未承認のアプリケーション依存を導入せず、最初のVertical Sliceにおける認証済みGo HTTP APIのOpenAPI 3.1契約を実装する。
 
-**Architecture:** A Go `net/http` adapter delegates to application services, which enforce workflow and authorization rules through repository interfaces. PostgreSQL repositories atomically apply request changes, approval changes, audit events, OIDC authentication transactions, and opaque sessions. OIDC and session middleware establish the authenticated Actor before handlers run; handlers only decode DTOs, require CSRF protection for unsafe methods, and translate typed application errors into the OpenAPI error model.
+**アーキテクチャ:** Goの`net/http` adapterは処理をアプリケーションサービスへ委譲し、サービスがrepository interfaceを通じてワークフローと認可規則を適用する。PostgreSQL repositoryは、Request・Approval・Audit Event・OIDC認証transaction・不透明なsessionを原子的に処理する。OIDCおよびsession middlewareがhandler実行前に認証済みActorを確立する。handlerの責務はDTOのdecode、unsafe methodのCSRF防御、型付きapplication errorからOpenAPI error modelへの変換だけとする。
 
-**Tech Stack:** Go 1.27.1; `net/http`, `database/sql`, `httptest`, and standard `crypto` packages; PostgreSQL with pgx stdlib v5.11.0; golang-migrate v4.20.1; `github.com/coreos/go-oidc/v3` v3.21.0; `golang.org/x/oauth2` v0.37.0; OpenAPI 3.1 contract at `api/openapi.yaml`.
+**技術スタック:** Go 1.27.1、`net/http`、`database/sql`、`httptest`、標準`crypto` package、pgx stdlib v5.11.0を用いるPostgreSQL、golang-migrate v4.20.1、`github.com/coreos/go-oidc/v3` v3.21.0、`golang.org/x/oauth2` v0.37.0、`api/openapi.yaml`のOpenAPI 3.1契約。
 
-**Spec:** `docs/superpowers/specs/2026-09-20-api-contract-design.md`
+**仕様:** `docs/superpowers/specs/2026-09-20-api-contract-design.md`
 
-## Global Constraints
+## 共通制約
 
-- Implement exactly the operations and schemas in `api/openapi.yaml`; do not add Reject, Cancel, notifications, workflow management, or frontend code.
-- Use Go 1.27.1 and exact module versions selected by ADR-004 and ADR-010; do not add runtime ORM, router, session, JWT, or test-container dependencies. Task 8's exact `yaml` development dependency is the sole contract-parser exception.
-- Use Go 1.22+ `ServeMux` method-aware patterns and `Request.PathValue`, as required by ADR-002.
-- Keep domain authorization, state transition, version comparison, and audit recording out of HTTP handlers.
-- Store only opaque CSPRNG cookie values in browsers; hash cookie values in PostgreSQL. Do not log OIDC tokens, PKCE verifiers, state, nonce, session cookies, or CSRF tokens.
-- Every unsafe `/api/v1` operation requires the session-bound `X-CSRF-Token` and an allowed `Origin`; do not treat `SameSite` as sufficient CSRF protection.
-- Submit and Approve must update the Request version and append the Audit Event in one PostgreSQL transaction; stale versions must return `409 version_conflict`.
-- PostgreSQL integration tests use a pre-provisioned `TEST_DATABASE_URL`; tests must never substitute SQLite or an in-memory DB for transaction/concurrency coverage.
-- Existing uncommitted toolchain and decision-document changes are not part of this plan's commits unless they are intentionally included by the human owner.
+- `api/openapi.yaml`に定義したoperationとschemaだけを実装する。Reject、Cancel、通知、ワークフロー管理、frontend codeは追加しない。
+- Go 1.27.1とADR-004/ADR-010で選定した正確なmodule versionを使用する。runtimeのORM、router、session、JWT、test-container依存を追加しない。Task 8の正確な`yaml`開発依存だけを契約parserの例外とする。
+- ADR-002に従い、Go 1.22以上の`ServeMux`のmethod-aware patternと`Request.PathValue`を使用する。
+- domainの認可、状態遷移、version比較、監査記録をHTTP handlerへ置かない。
+- browserにはCSPRNGで生成した不透明なcookie値だけを保存し、PostgreSQLにはcookie値のhashを保存する。OIDC token、PKCE verifier、state、nonce、session cookie、CSRF tokenをlogへ出力しない。
+- 全unsafe `/api/v1` operationでsessionに束縛した`X-CSRF-Token`と許可された`Origin`を必須とする。`SameSite`をCSRF防御として十分とは扱わない。
+- SubmitとApproveでは、一つのPostgreSQL transactionでRequest version更新とAudit Event追記を行う。古いversionには`409 version_conflict`を返す。
+- PostgreSQL integration testは事前に用意した`TEST_DATABASE_URL`を使用する。transaction/concurrency coverageでSQLiteやin-memory DBへ代替しない。
+- 既存の未commit toolchain・Decision document変更は、人間のownerが明示的に含めない限り、この計画のcommit対象にしない。
 
-## Review Focus
+## レビュー重点項目
 
-- A title containing only whitespace must be rejected after trimming, while a description may be empty and must remain visible in the audit snapshot.
-- Two concurrent Submit or Approve calls carrying the same `expectedVersion` must yield exactly one success and one `409 version_conflict`; no duplicate Audit Event may be written.
-- A Requester must not update or submit another Requester's Draft, and an unassigned Approver must not approve a known Pending Request; both mutations return `403 forbidden`.
-- An OIDC callback replay, mismatched state, nonce, transaction cookie, or PKCE verifier must consume or reject the transaction and never issue a session.
-- A valid session with a missing/wrong CSRF token or disallowed Origin must not create, update, Submit, Approve, or logout; it returns `403 csrf_validation_failed`.
+- 空白だけのTitleはtrim後に拒否する。Descriptionは空を許容し、Audit snapshotで空であることを確認できなければならない。
+- 同一`expectedVersion`を持つ同時SubmitまたはApproveは、必ず1件だけ成功し、他方は`409 version_conflict`となる。Audit Eventを重複記録してはならない。
+- Requesterは他RequesterのDraftを更新・Submitできず、未割当Approverは既知のPending RequestをApproveできない。いずれの変更操作も`403 forbidden`を返す。
+- OIDC callbackの再送、state・nonce・transaction cookie・PKCE verifierの不一致はtransactionを消費または拒否し、sessionを発行してはならない。
+- 有効なsessionでも、CSRF tokenの欠落・不一致、または許可されないOriginではCreate、Update、Submit、Approve、logoutできず、`403 csrf_validation_failed`を返す。
 
 ---
 
-### Task 1: Add OIDC modules and validated runtime configuration
+### Task 1: OIDC moduleと検証済みruntime configurationを追加する
 
-**Files:**
-- Modify: `go.mod`
-- Modify: `go.sum`
-- Create: `internal/config/config.go`
-- Create: `internal/config/config_test.go`
+**ファイル:**
+- 変更: `go.mod`
+- 変更: `go.sum`
+- 作成: `internal/config/config.go`
+- 作成: `internal/config/config_test.go`
 
-**Interfaces:**
-- Produces: `config.Load(lookup func(string) string) (config.Config, error)`.
-- Produces: `config.Config` containing database URL, listener address, allowed origin, OIDC issuer/client ID/redirect URI, and cookie/session secret settings.
-- Consumed by: `cmd/api/main.go`, OIDC client construction, session middleware, PostgreSQL setup.
+**Interface:**
+- 提供: `config.Load(lookup func(string) string) (config.Config, error)`。
+- 提供: database URL、listener address、許可origin、OIDC issuer/client ID/redirect URI、cookie/session secret設定を含む`config.Config`。
+- 利用元: `cmd/api/main.go`、OIDC client構築、session middleware、PostgreSQL設定。
 
-- [ ] **Step 1: Write failing configuration tests**
+- [ ] **Step 1: 失敗するconfiguration testを書く**
 
 ```go
 func TestLoadRejectsProductionWithoutSecureCookie(t *testing.T) {
@@ -72,15 +72,15 @@ func TestLoadAllowsInsecureCookieOnlyForLoopbackDevelopment(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused test to verify failure**
+- [ ] **Step 2: focused testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/config -run TestLoad -count=1`
 
-Expected: FAIL because the package and `Load` do not exist.
+期待結果: packageと`Load`が存在しないためFAIL。
 
-- [ ] **Step 3: Add exact OIDC dependencies and configuration validation**
+- [ ] **Step 3: 正確なOIDC依存とconfiguration validationを追加する**
 
-Add direct requirements for `github.com/coreos/go-oidc/v3 v3.21.0` and `golang.org/x/oauth2 v0.37.0`. Implement `Config` with required non-empty configuration values and positive duration parsing. Require a 32-byte base64-decoded auth-transaction encryption key. Permit `APP_COOKIE_SECURE=false` only when `APP_ENV=development` and both application and allowed-origin hosts are loopback; otherwise fail at startup.
+`github.com/coreos/go-oidc/v3 v3.21.0`と`golang.org/x/oauth2 v0.37.0`を直接requireへ追加する。必須の非空configuration値と正のdurationを検証する`Config`を実装する。base64 decode後32 byteとなるauth transaction暗号化鍵を必須にする。`APP_COOKIE_SECURE=false`は、`APP_ENV=development`かつapplication/allowed-originのhostがともにloopbackの場合だけ許可し、それ以外は起動時に失敗させる。
 
 ```go
 type Config struct {
@@ -92,36 +92,36 @@ type Config struct {
 }
 ```
 
-- [ ] **Step 4: Run focused tests and module integrity checks**
+- [ ] **Step 4: focused testとmodule integrity checkを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/config -count=1 && GOTOOLCHAIN=go1.27.1 go mod verify`
 
-Expected: PASS.
+期待結果: PASS。
 
-- [ ] **Step 5: Commit the task files**
+- [ ] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add go.mod go.sum internal/config/config.go internal/config/config_test.go
 git commit -m "feat: add validated API runtime configuration"
 ```
 
-### Task 2: Create versioned PostgreSQL schema for workflow, audit, sessions, and OIDC transactions
+### Task 2: workflow、audit、session、OIDC transaction用のversion管理PostgreSQL schemaを作成する
 
-**Files:**
-- Create: `migrations/000001_initial_workflow.up.sql`
-- Create: `migrations/000001_initial_workflow.down.sql`
-- Create: `migrations/000002_auth_sessions.up.sql`
-- Create: `migrations/000002_auth_sessions.down.sql`
-- Create: `internal/store/postgres/migrations_test.go`
+**ファイル:**
+- 作成: `migrations/000001_initial_workflow.up.sql`
+- 作成: `migrations/000001_initial_workflow.down.sql`
+- 作成: `migrations/000002_auth_sessions.up.sql`
+- 作成: `migrations/000002_auth_sessions.down.sql`
+- 作成: `internal/store/postgres/migrations_test.go`
 
-**Interfaces:**
-- Produces: tables for Organization, Member, MemberRole, Request, Approval, AuditEvent, `app_sessions`, and `oidc_auth_transactions`.
-- Produces: unique and foreign-key constraints needed by later repository methods.
-- Consumed by: all PostgreSQL repositories and integration tests.
+**Interface:**
+- 提供: Organization、Member、MemberRole、Request、Approval、AuditEvent、`app_sessions`、`oidc_auth_transactions`のtable。
+- 提供: 後続repository methodに必要なunique constraintとforeign key constraint。
+- 利用元: 全PostgreSQL repositoryとintegration test。
 
-- [ ] **Step 1: Write a failing migration integration test**
+- [ ] **Step 1: 失敗するmigration integration testを書く**
 
-Create a fresh schema/database from `TEST_DATABASE_URL`, apply every `up` migration with golang-migrate, and assert that required tables and constraints exist. Add a second test that applies `down` migrations in reverse and verifies the schema is empty.
+`TEST_DATABASE_URL`から新しいschema/databaseを作成し、golang-migrateで全`up` migrationを適用して、必要なtableとconstraintの存在を確認する。逆順に`down` migrationを適用してschemaが空になることを確認するtestも追加する。
 
 ```go
 func TestMigrationsCreateWorkflowAndAuthTables(t *testing.T) {
@@ -133,54 +133,54 @@ func TestMigrationsCreateWorkflowAndAuthTables(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the migration test to verify failure**
+- [ ] **Step 2: migration testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run TestMigrationsCreateWorkflowAndAuthTables -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
-Expected: FAIL because no migration files exist.
+期待結果: migration fileが存在しないためFAIL。
 
-- [ ] **Step 3: Implement the migrations**
+- [ ] **Step 3: migrationを実装する**
 
-Use opaque text IDs in the public-facing entities while keeping internal persistence fields private to repositories. Add:
+公開entityには不透明なtext IDを使用し、内部persistence fieldはrepositoryに閉じ込める。次を追加する。
 
-- `requests.version BIGINT NOT NULL CHECK (version >= 1)` and a status constraint limited to `draft`, `pending`, `approved`.
-- one `approvals` row per initial Request with an assignee, `pending`/`approved` status, and unique Request ID.
-- append-only `audit_events` with event type, actor Member ID, occurrence time, nullable content snapshot/approval metadata, and no application update/delete path.
-- `app_sessions` with a unique cookie hash, Member ID, CSRF token hash, created/last-used/idle-expiry/absolute-expiry/revoked timestamps.
-- `oidc_auth_transactions` with unique cookie and state hashes, nonce, encrypted verifier, issuer/client/redirect values, expiry, and consumed timestamp.
+- `requests.version BIGINT NOT NULL CHECK (version >= 1)`と、`draft`、`pending`、`approved`に限定するstatus constraint。
+- assignee、`pending`/`approved` status、unique Request IDを持つ、初回Requestあたり1行の`approvals`。
+- event type、Actor Member ID、発生時刻、nullableなcontent snapshot/approval metadataを持ち、applicationから更新・削除できないappend-only `audit_events`。
+- unique cookie hash、Member ID、CSRF token hash、作成・最終利用・idle-expiry・absolute-expiry・失効時刻を持つ`app_sessions`。
+- unique cookie/state hash、nonce、暗号化verifier、issuer/client/redirect値、expiry、消費時刻を持つ`oidc_auth_transactions`。
 
-Index Pending approvals by assignee and Request status; index active session and transaction lookup keys. Down migrations must remove tables in dependency-safe reverse order.
+Pending approvalをassigneeとRequest statusでindexし、active sessionとtransaction lookup keyもindexする。down migrationは依存関係を壊さない逆順でtableを削除する。
 
-- [ ] **Step 4: Run migration up/down tests**
+- [ ] **Step 4: migrationのup/down testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run TestMigrations -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
-Expected: PASS.
+期待結果: PASS。
 
-- [ ] **Step 5: Commit the task files**
+- [ ] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add migrations internal/store/postgres/migrations_test.go
 git commit -m "feat: add workflow and auth database migrations"
 ```
 
-### Task 3: Implement domain workflow and audit application services with unit tests
+### Task 3: domain workflowとaudit application serviceをunit testとともに実装する
 
-**Files:**
-- Create: `internal/domain/request.go`
-- Create: `internal/domain/errors.go`
-- Create: `internal/application/requests/service.go`
-- Create: `internal/application/requests/service_test.go`
-- Create: `internal/application/requests/repository.go`
+**ファイル:**
+- 作成: `internal/domain/request.go`
+- 作成: `internal/domain/errors.go`
+- 作成: `internal/application/requests/service.go`
+- 作成: `internal/application/requests/service_test.go`
+- 作成: `internal/application/requests/repository.go`
 
-**Interfaces:**
-- Consumes: `Actor{MemberID string, Roles []Role}`, `ExpectedVersion int64`, and repository interfaces.
-- Produces: `CreateDraft`, `UpdateDraft`, `Submit`, `Approve`, `Get`, `ListPending`, and `ListAuditEvents` methods plus typed errors (`ErrForbidden`, `ErrNotFound`, `ErrVersionConflict`, `ErrInvalidState`, `ErrApprovalRoutingUnavailable`).
-- Consumed by: PostgreSQL adapter and HTTP handlers.
+**Interface:**
+- 利用: `Actor{MemberID string, Roles []Role}`、`ExpectedVersion int64`、repository interface。
+- 提供: `CreateDraft`、`UpdateDraft`、`Submit`、`Approve`、`Get`、`ListPending`、`ListAuditEvents` methodと、型付きerror（`ErrForbidden`、`ErrNotFound`、`ErrVersionConflict`、`ErrInvalidState`、`ErrApprovalRoutingUnavailable`）。
+- 利用元: PostgreSQL adapterとHTTP handler。
 
-- [ ] **Step 1: Write failing table-driven service tests**
+- [ ] **Step 1: 失敗するtable-driven service testを書く**
 
-Cover Title trimming, empty Description, Draft-only update, self-submission to the default Approver, missing default Approver, wrong Requester, wrong Approver, stale versions, and audit snapshots.
+Title trim、空Description、Draft限定更新、既定Approverへの自己Submit、既定Approver不在、誤ったRequester、誤ったApprover、古いversion、audit snapshotを対象にする。
 
 ```go
 func TestSubmitRejectsStaleVersionWithoutAuditEvent(t *testing.T) {
@@ -191,15 +191,15 @@ func TestSubmitRejectsStaleVersionWithoutAuditEvent(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run unit tests to verify failure**
+- [ ] **Step 2: unit testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/application/requests -count=1`
 
-Expected: FAIL because the service and typed errors do not exist.
+期待結果: serviceと型付きerrorが存在しないためFAIL。
 
-- [ ] **Step 3: Implement pure application rules**
+- [ ] **Step 3: 純粋なapplication ruleを実装する**
 
-Keep HTTP, SQL, and OIDC types out of the package. Normalize Title with `strings.TrimSpace`, reject an empty normalized Title, and enforce PDR-001 bounds. Enforce PDR-002 at Submit, store the assigned Approver in the Approval returned by the repository, and create one audit event per successful mutation.
+HTTP、SQL、OIDC typeをこのpackageへ持ち込まない。`strings.TrimSpace`でTitleをnormalizeし、normalize後の空Titleを拒否してPDR-001の長さ制約を適用する。SubmitでPDR-002を適用し、repositoryが返すApprovalに割当Approverを保存する。成功した変更操作ごとに1件のaudit eventを作成する。
 
 ```go
 type Repository interface {
@@ -210,34 +210,34 @@ type Repository interface {
 }
 ```
 
-- [ ] **Step 4: Run unit tests**
+- [ ] **Step 4: unit testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/domain ./internal/application/requests -count=1`
 
-Expected: PASS.
+期待結果: PASS。
 
-- [ ] **Step 5: Commit the task files**
+- [ ] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add internal/domain internal/application/requests
 git commit -m "feat: add request workflow application service"
 ```
 
-### Task 4: Implement PostgreSQL repositories and transactional concurrency tests
+### Task 4: PostgreSQL repositoryとtransactional concurrency testを実装する
 
-**Files:**
-- Create: `internal/store/postgres/requests.go`
-- Create: `internal/store/postgres/requests_test.go`
-- Create: `internal/store/postgres/seed_test.go`
+**ファイル:**
+- 作成: `internal/store/postgres/requests.go`
+- 作成: `internal/store/postgres/requests_test.go`
+- 作成: `internal/store/postgres/seed_test.go`
 
-**Interfaces:**
-- Implements: `internal/application/requests.Repository`.
-- Consumes: `*sql.DB` and the migrations from Task 2.
-- Produces: transactional Draft/Submit/Approve persistence and DTO-ready domain values.
+**Interface:**
+- 実装: `internal/application/requests.Repository`。
+- 利用: `*sql.DB`とTask 2のmigration。
+- 提供: transactionを使うDraft/Submit/Approve persistenceとDTO変換可能なdomain value。
 
-- [ ] **Step 1: Write failing PostgreSQL integration tests**
+- [ ] **Step 1: 失敗するPostgreSQL integration testを書く**
 
-Seed one Organization, Requester, Approver, Admin, and default Approver. Test that the conditional update predicate includes both `id`, expected `version`, and expected current state. Start two goroutines with the same expected version and assert only one can Submit or Approve.
+Organization、Requester、Approver、Admin、既定Approverを各1件seedする。条件付き更新predicateが`id`、期待`version`、期待current stateの全てを含むことをtestする。同じ期待versionで2つのgoroutineを起動し、SubmitまたはApproveが1件だけ成功することを確認する。
 
 ```go
 func TestApproveIsAtomicWithAuditEvent(t *testing.T) {
@@ -249,47 +249,47 @@ func TestApproveIsAtomicWithAuditEvent(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run integration tests to verify failure**
+- [ ] **Step 2: integration testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run 'Test(Submit|Approve)' -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
-Expected: FAIL because no repository implementation exists.
+期待結果: repository実装が存在しないためFAIL。
 
-- [ ] **Step 3: Implement explicit SQL repositories**
+- [ ] **Step 3: 明示的なSQL repositoryを実装する**
 
-Use `BEGIN`/`COMMIT` for Submit and Approve. In each transaction, update `requests` with `WHERE id = $1 AND version = $2 AND status = $3`, check `RowsAffected`, write the corresponding Approval/Audit Event, then commit. Return a typed conflict/state error without writing an event when the update affects zero rows. Do not expose table rows directly; map them to domain DTOs.
+SubmitとApproveでは`BEGIN`/`COMMIT`を使用する。各transactionで`WHERE id = $1 AND version = $2 AND status = $3`により`requests`を更新し、`RowsAffected`を確認してから対応するApproval/Audit Eventを書き込み、commitする。更新行数が0の場合はeventを書き込まず、型付きconflict/state errorを返す。table rowを直接公開せず、domain DTOへmapする。
 
-- [ ] **Step 4: Run all PostgreSQL repository tests**
+- [ ] **Step 4: 全PostgreSQL repository testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
-Expected: PASS, including concurrent mutation cases.
+期待結果: 同時変更のcaseを含めてPASS。
 
-- [ ] **Step 5: Commit the task files**
+- [ ] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add internal/store/postgres
 git commit -m "feat: persist workflow transitions atomically"
 ```
 
-### Task 5: Implement OIDC transactions and opaque server-side sessions
+### Task 5: OIDC transactionと不透明なserver-side sessionを実装する
 
-**Files:**
-- Create: `internal/auth/oidc.go`
-- Create: `internal/auth/oidc_test.go`
-- Create: `internal/auth/session.go`
-- Create: `internal/auth/session_test.go`
-- Create: `internal/store/postgres/sessions.go`
-- Create: `internal/store/postgres/sessions_test.go`
+**ファイル:**
+- 作成: `internal/auth/oidc.go`
+- 作成: `internal/auth/oidc_test.go`
+- 作成: `internal/auth/session.go`
+- 作成: `internal/auth/session_test.go`
+- 作成: `internal/store/postgres/sessions.go`
+- 作成: `internal/store/postgres/sessions_test.go`
 
-**Interfaces:**
-- Produces: `Authenticator.BeginLogin`, `Authenticator.CompleteLogin`, `SessionStore.Create`, `SessionStore.Authenticate`, and `SessionStore.Revoke`.
-- Consumes: OIDC issuer/client/redirect configuration, `oidc.Provider`, `oauth2.Config`, encryption key, and PostgreSQL auth tables.
-- Consumed by: HTTP login/callback handlers and authentication middleware.
+**Interface:**
+- 提供: `Authenticator.BeginLogin`、`Authenticator.CompleteLogin`、`SessionStore.Create`、`SessionStore.Authenticate`、`SessionStore.Revoke`。
+- 利用: OIDC issuer/client/redirect configuration、`oidc.Provider`、`oauth2.Config`、暗号化鍵、PostgreSQL auth table。
+- 利用元: HTTP login/callback handlerとauthentication middleware。
 
-- [ ] **Step 1: Write failing auth and session tests**
+- [ ] **Step 1: 失敗するauth/session testを書く**
 
-Use `httptest.Server` as an OIDC discovery/JWKS/token-endpoint test double. Test state mismatch, nonce mismatch, invalid issuer/audience/signature, code exchange with the wrong verifier, callback replay, encrypted verifier storage, logout, expired session, and CSRF token verification.
+`httptest.Server`をOIDC discovery/JWKS/token endpointのtest doubleにする。state不一致、nonce不一致、無効issuer/audience/signature、誤ったverifierによるcode交換、callback replay、暗号化verifier保存、logout、期限切れsession、CSRF token検証をtestする。
 
 ```go
 func TestCompleteLoginConsumesTransactionBeforeIssuingSession(t *testing.T) {
@@ -301,50 +301,50 @@ func TestCompleteLoginConsumesTransactionBeforeIssuingSession(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run focused auth tests to verify failure**
+- [ ] **Step 2: focused auth testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/auth -count=1`
 
-Expected: FAIL because authentication and session packages do not exist.
+期待結果: authentication/session packageが存在しないためFAIL。
 
-- [ ] **Step 3: Implement the OIDC and session boundary**
+- [ ] **Step 3: OIDCとsessionの境界を実装する**
 
-Use `oidc.NewProvider`, one long-lived `Provider.VerifierContext`, `oauth2.GenerateVerifier`, `oauth2.S256ChallengeOption`, `oidc.Nonce`, and `oauth2.VerifierOption`. Generate state, nonce, verifier, transaction cookie, session cookie, and CSRF token with `crypto/rand`. Encrypt only the stored PKCE verifier using AES-GCM with the configured 32-byte key; hash cookie and CSRF tokens with SHA-256 before storage. Implement `SessionStore.IssueCSRFToken` to atomically replace the stored CSRF-token hash and return the raw token only to `GET /api/v1/session`; never persist or log the raw token. Match `iss` and `sub` only after token verification and map them to a Member through an explicit repository method.
+`oidc.NewProvider`、1個の長寿命`Provider.VerifierContext`、`oauth2.GenerateVerifier`、`oauth2.S256ChallengeOption`、`oidc.Nonce`、`oauth2.VerifierOption`を使用する。`crypto/rand`でstate、nonce、verifier、transaction cookie、session cookie、CSRF tokenを生成する。保存するPKCE verifierだけを設定済み32 byte鍵のAES-GCMで暗号化し、cookie/CSRF tokenは保存前にSHA-256でhashする。`SessionStore.IssueCSRFToken`で保存済みCSRF token hashを原子的に置換し、生tokenは`GET /api/v1/session`にだけ返す。生tokenを永続化・log出力してはならない。token検証後にのみ`iss`と`sub`を照合し、明示的repository methodを通じてMemberに対応付ける。
 
-Issue production `__Host-approval_flow_session` cookies with `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, and no Domain. Use a distinct development-only cookie name when the configuration permits loopback HTTP. Delete/expire the transaction record on every callback outcome after it has been identified.
+productionでは、`Secure`、`HttpOnly`、`SameSite=Lax`、`Path=/`、Domainなしの`__Host-approval_flow_session` cookieを発行する。configurationがloopback HTTPを許可する場合だけ、開発用の別cookie名を使用する。識別できたtransaction recordは、callbackの成功・失敗にかかわらず削除または失効させる。
 
-- [ ] **Step 4: Run authentication and session tests**
+- [ ] **Step 4: authentication/session testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/auth ./internal/store/postgres -run 'Test(CompleteLogin|Session|Csrf)' -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
-Expected: PASS.
+期待結果: PASS。
 
-- [ ] **Step 5: Commit the task files**
+- [ ] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add internal/auth internal/store/postgres/sessions.go internal/store/postgres/sessions_test.go
 git commit -m "feat: add OIDC login and opaque sessions"
 ```
 
-### Task 6: Add HTTP middleware, errors, OIDC endpoints, and session endpoints
+### Task 6: HTTP middleware、error、OIDC endpoint、session endpointを追加する
 
-**Files:**
-- Create: `internal/httpapi/router.go`
-- Create: `internal/httpapi/auth_handlers.go`
-- Create: `internal/httpapi/session_handlers.go`
-- Create: `internal/httpapi/errors.go`
-- Create: `internal/httpapi/auth_handlers_test.go`
-- Create: `internal/httpapi/session_handlers_test.go`
-- Create: `cmd/api/main.go`
+**ファイル:**
+- 作成: `internal/httpapi/router.go`
+- 作成: `internal/httpapi/auth_handlers.go`
+- 作成: `internal/httpapi/session_handlers.go`
+- 作成: `internal/httpapi/errors.go`
+- 作成: `internal/httpapi/auth_handlers_test.go`
+- 作成: `internal/httpapi/session_handlers_test.go`
+- 作成: `cmd/api/main.go`
 
-**Interfaces:**
-- Consumes: `auth.Authenticator`, `auth.SessionStore`, `config.Config`, and request application service.
-- Produces: `http.Handler` with `GET /auth/oidc/login`, `GET /auth/oidc/callback`, `GET /api/v1/session`, and `POST /api/v1/session/logout`.
-- Produces: `WriteError(http.ResponseWriter, APIError)` mapping typed errors to OpenAPI `ErrorResponse`.
+**Interface:**
+- 利用: `auth.Authenticator`、`auth.SessionStore`、`config.Config`、Request application service。
+- 提供: `GET /auth/oidc/login`、`GET /auth/oidc/callback`、`GET /api/v1/session`、`POST /api/v1/session/logout`を持つ`http.Handler`。
+- 提供: 型付きerrorをOpenAPIの`ErrorResponse`へmapする`WriteError(http.ResponseWriter, APIError)`。
 
-- [ ] **Step 1: Write failing handler tests**
+- [ ] **Step 1: 失敗するhandler testを書く**
 
-Assert exact route/method behavior, 302 Location and Set-Cookie on login/callback, 401 for missing/expired session, 403 `csrf_validation_failed` for missing/wrong CSRF token or Origin, 204 and cookie clearing on logout, and no token/verifier in JSON or logs.
+正確なroute/methodの動作、login/callbackの302 LocationとSet-Cookie、欠落/期限切れsessionの401、CSRF tokenまたはOriginの欠落/不一致時の403 `csrf_validation_failed`、logout時の204とcookie削除、JSON/logにtoken/verifierがないことを確認する。
 
 ```go
 func TestLogoutRejectsMissingCSRFToken(t *testing.T) {
@@ -358,15 +358,15 @@ func TestLogoutRejectsMissingCSRFToken(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run HTTP auth/session tests to verify failure**
+- [ ] **Step 2: HTTP auth/session testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -run 'Test(Login|Callback|Session|Logout)' -count=1`
 
-Expected: FAIL because router and handlers do not exist.
+期待結果: routerとhandlerが存在しないためFAIL。
 
-- [ ] **Step 3: Implement router and handlers**
+- [ ] **Step 3: routerとhandlerを実装する**
 
-Register method-aware `ServeMux` patterns. Authentication middleware loads the opaque session once and stores only `application.Actor` in `request.Context`. The CSRF middleware runs only for unsafe `/api/v1` methods and requires exact allowed Origin plus the session-bound header token. Handlers must use the approved error codes and must redirect only to configured local UI paths, never a query-supplied return URL.
+method-aware `ServeMux` patternを登録する。authentication middlewareは不透明sessionを1回だけloadし、`application.Actor`だけを`request.Context`へ保存する。CSRF middlewareはunsafe `/api/v1` methodだけで実行し、正確な許可Originとsessionに束縛したheader tokenを必須とする。handlerは承認済みerror codeを使用し、queryで受け取ったreturn URLへredirectせず、設定済みlocal UI pathだけへredirectする。
 
 ```go
 mux.Handle("GET /auth/oidc/login", beginLoginHandler)
@@ -375,36 +375,36 @@ mux.Handle("GET /api/v1/session", requireSession(currentSessionHandler))
 mux.Handle("POST /api/v1/session/logout", requireCSRF(requireSession(logoutHandler)))
 ```
 
-- [ ] **Step 4: Run HTTP auth/session tests**
+- [ ] **Step 4: HTTP auth/session testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -run 'Test(Login|Callback|Session|Logout)' -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
-Expected: PASS.
+期待結果: PASS。
 
-- [ ] **Step 5: Commit the task files**
+- [ ] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add cmd/api/main.go internal/httpapi
 git commit -m "feat: expose OIDC and session HTTP endpoints"
 ```
 
-### Task 7: Implement Request, Approval, and Audit HTTP operations
+### Task 7: Request、Approval、AuditのHTTP operationを実装する
 
-**Files:**
-- Create: `internal/httpapi/request_handlers.go`
-- Create: `internal/httpapi/request_handlers_test.go`
-- Create: `internal/httpapi/response_dto.go`
-- Create: `internal/httpapi/response_dto_test.go`
-- Modify: `internal/httpapi/router.go`
+**ファイル:**
+- 作成: `internal/httpapi/request_handlers.go`
+- 作成: `internal/httpapi/request_handlers_test.go`
+- 作成: `internal/httpapi/response_dto.go`
+- 作成: `internal/httpapi/response_dto_test.go`
+- 変更: `internal/httpapi/router.go`
 
-**Interfaces:**
-- Consumes: authenticated Actor from request context and `application/requests.Service`.
-- Produces: all `/api/v1/requests` operations and OpenAPI-shaped JSON DTOs.
-- Produces: `201` plus Location for Draft creation, `200` for mutation success, `404 request_not_found` for invisible reads, and OpenAPI error responses for all failure modes.
+**Interface:**
+- 利用: request contextから得た認証済みActorと`application/requests.Service`。
+- 提供: 全`/api/v1/requests` operationとOpenAPI形式のJSON DTO。
+- 提供: Draft作成時の`201`とLocation、変更成功時の`200`、閲覧不可readの`404 request_not_found`、全failure modeのOpenAPI error response。
 
-- [ ] **Step 1: Write failing HTTP contract tests**
+- [ ] **Step 1: 失敗するHTTP contract testを書く**
 
-Write tests against `httptest` for every OpenAPI operation. Include valid Requester/Approver sessions, JSON decode errors, field errors, forbidden mutations, invisible reads, stale versions, invalid state, approval routing failure, and the Audit Event snapshot fields.
+全OpenAPI operationに対して`httptest`を使うtestを書く。有効なRequester/Approver session、JSON decode error、field error、禁止mutation、閲覧不可read、古いversion、無効state、approval routing失敗、Audit Event snapshot fieldを含める。
 
 ```go
 func TestSubmitStaleVersionReturns409AndDoesNotCreateExtraAuditEvent(t *testing.T) {
@@ -418,48 +418,48 @@ func TestSubmitStaleVersionReturns409AndDoesNotCreateExtraAuditEvent(t *testing.
 }
 ```
 
-- [ ] **Step 2: Run request handler tests to verify failure**
+- [ ] **Step 2: Request handler testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -run 'Test(Create|Get|Update|Submit|Pending|Approve|Audit)' -count=1`
 
-Expected: FAIL because request routes and DTO mapping do not exist.
+期待結果: Request routeとDTO mappingが存在しないためFAIL。
 
-- [ ] **Step 3: Implement decoders, DTO mapping, and handlers**
+- [ ] **Step 3: decoder、DTO mapping、handlerを実装する**
 
-Use `json.Decoder` with `DisallowUnknownFields` and reject trailing data. Decode `expectedVersion` from every unsafe Request operation. Use `r.PathValue("requestId")`; do not concatenate unvalidated values into SQL. Map typed application errors centrally: invalid input to 400, missing session to 401, forbidden mutation to 403, invisible/not-found read to 404, and version/state/routing conflicts to 409. Return the current Request and Approval DTO after a successful mutation, and sorted audit events for Audit History.
+`DisallowUnknownFields`を有効化した`json.Decoder`を使用し、trailing dataを拒否する。全unsafe Request operationから`expectedVersion`をdecodeする。`r.PathValue("requestId")`を使用し、未検証値をSQLへ連結しない。型付きapplication errorは一元的にmapする。無効inputは400、session欠落は401、禁止mutationは403、閲覧不可/not-found readは404、version/state/routing conflictは409とする。成功mutation後は現在のRequest/Approval DTOを返し、Audit Historyには並び替えたaudit eventを返す。
 
-- [ ] **Step 4: Run all HTTP API tests**
+- [ ] **Step 4: 全HTTP API testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
-Expected: PASS.
+期待結果: PASS。
 
-- [ ] **Step 5: Commit the task files**
+- [ ] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add internal/httpapi/request_handlers.go internal/httpapi/request_handlers_test.go internal/httpapi/response_dto.go internal/httpapi/response_dto_test.go internal/httpapi/router.go
 git commit -m "feat: expose request approval API"
 ```
 
-### Task 8: Verify the published contract, application startup, and developer documentation
+### Task 8: 公開契約、application起動、開発者documentを検証する
 
-**Files:**
-- Modify: `api/openapi.yaml`
-- Modify: `docs/development/toolchain.md`
-- Create: `docs/development/local-api.md`
-- Create: `scripts/verify-openapi.mjs`
-- Create: `scripts/verify-openapi.test.mjs`
-- Modify: `package.json`
-- Modify: `pnpm-lock.yaml`
+**ファイル:**
+- 変更: `api/openapi.yaml`
+- 変更: `docs/development/toolchain.md`
+- 作成: `docs/development/local-api.md`
+- 作成: `scripts/verify-openapi.mjs`
+- 作成: `scripts/verify-openapi.test.mjs`
+- 変更: `package.json`
+- 変更: `pnpm-lock.yaml`
 
-**Interfaces:**
-- Consumes: `api/openapi.yaml` and the existing pinned Node/pnpm toolchain.
-- Produces: `pnpm run verify:openapi`, which parses OpenAPI YAML and checks local component references before CI or implementation tests run.
-- Produces: reproducible instructions for PostgreSQL migration, Keycloak startup, required runtime secret inputs, and API test commands.
+**Interface:**
+- 利用: `api/openapi.yaml`と既存の固定済みNode/pnpm toolchain。
+- 提供: CIまたはimplementation testの前にOpenAPI YAMLをparseし、local component referenceを確認する`pnpm run verify:openapi`。
+- 提供: PostgreSQL migration、Keycloak起動、必須runtime secret入力、API test commandの再現可能な手順。
 
-- [ ] **Step 1: Write a failing contract-validation test**
+- [ ] **Step 1: 失敗するcontract validation testを書く**
 
-Add a Node test that loads the contract, asserts `openapi` starts with `3.1.`, checks all `$ref` values resolve under `components`, and checks that the accepted operations/security requirements remain present.
+契約をloadし、`openapi`が`3.1.`で始まること、全`$ref`値が`components`配下でresolveすること、承認済みoperation/security requirementが残っていることを確認するNode testを追加する。
 
 ```js
 test("all local OpenAPI references resolve", () => {
@@ -470,21 +470,21 @@ test("all local OpenAPI references resolve", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify failure**
+- [ ] **Step 2: testを実行して失敗を確認する**
 
 Run: `pnpm run verify:openapi`
 
-Expected: FAIL because the parser and script do not exist.
+期待結果: parserとscriptが存在しないためFAIL。
 
-- [ ] **Step 3: Add the smallest direct development dependency and verification script**
+- [ ] **Step 3: 最小の直接開発依存とverification scriptを追加する**
 
-Add `yaml` v2.9.1 as an exact direct `devDependency`, update `pnpm-lock.yaml` through the ADR-007 review process, and use only it plus Node standard modules in `scripts/verify-openapi.mjs`. Record in `docs/development/toolchain.md` that this is a contract-validation-only development dependency, not an application runtime dependency. Add `verify:openapi` to `package.json`.
+`yaml` v2.9.1を正確な直接`devDependency`として追加し、ADR-007のreview手順に従って`pnpm-lock.yaml`を更新する。`scripts/verify-openapi.mjs`ではこれとNode標準moduleだけを使用する。これはapplication runtime dependencyではなくcontract validation専用のdevelopment dependencyであることを`docs/development/toolchain.md`に記録する。`package.json`へ`verify:openapi`を追加する。
 
-- [ ] **Step 4: Document reproducible local API operation**
+- [ ] **Step 4: 再現可能なlocal API運用手順をdocument化する**
 
-In `docs/development/local-api.md`, document the exact order: provision PostgreSQL, apply migrations explicitly, start loopback-only Keycloak development mode with externally supplied test credentials, set required OIDC/session encryption configuration, launch `cmd/api`, run Go unit/integration tests, and run `pnpm run verify:openapi`. Do not place credentials or encryption keys in the repository.
+`docs/development/local-api.md`に、PostgreSQLの準備、明示的なmigration適用、外部から与えたtest credentialを使うloopback限定Keycloak development modeの起動、必須OIDC/session暗号化configurationの設定、`cmd/api`の起動、Go unit/integration test、`pnpm run verify:openapi`の実行という正確な順序を記載する。credentialや暗号化鍵をrepositoryへ置かない。
 
-- [ ] **Step 5: Run the complete API verification suite**
+- [ ] **Step 5: 完全なAPI verification suiteを実行する**
 
 Run:
 
@@ -497,18 +497,18 @@ GOTOOLCHAIN=go1.27.1 go mod verify
 git diff --check
 ```
 
-Expected: PASS. The integration commands require an isolated PostgreSQL database URL; no test may run against a production database.
+期待結果: PASS。integration commandには分離されたPostgreSQL database URLが必要であり、production databaseに対してtestを実行してはならない。
 
-- [ ] **Step 6: Commit the task files**
+- [ ] **Step 6: このタスクのファイルをcommitする**
 
 ```bash
 git add api/openapi.yaml docs/development/toolchain.md docs/development/local-api.md scripts package.json pnpm-lock.yaml
 git commit -m "test: verify API contract and local operation"
 ```
 
-## Plan Self-Review
+## 計画の自己レビュー
 
-- **Spec coverage:** Tasks 1 and 5 cover OIDC/PKCE/session/CSRF; Tasks 2 and 4 cover PostgreSQL, migration, audit, and concurrency; Task 3 covers PDR workflow rules; Tasks 6 and 7 cover every OpenAPI operation and error class; Task 8 covers contract validation and reproducible operation.
-- **Placeholder scan:** No task contains unfinished-work markers; all named files, interfaces, commands, and expected outcomes are explicit.
-- **Type consistency:** `application.Actor` is the authenticated identity passed from `internal/auth` through HTTP middleware to request services; `expectedVersion` is `int64` throughout; OpenAPI operation names map directly to named handler/service methods.
-- **Review focus:** Task 3 tests normalized Title and audit content; Task 4 tests race-safe mutations; Task 5 tests callback replay; Task 6 tests CSRF/origin; Task 7 tests authorization/error mapping.
+- **仕様coverage:** Task 1/5はOIDC・PKCE・session・CSRFを扱う。Task 2/4はPostgreSQL、migration、audit、concurrencyを扱う。Task 3はPDRのworkflow ruleを扱う。Task 6/7は全OpenAPI operationとerror classを扱う。Task 8はcontract validationと再現可能な運用を扱う。
+- **未完了表現の走査:** 全taskでファイル、interface、command、期待結果を明示している。
+- **型の整合性:** `application.Actor`は`internal/auth`からHTTP middlewareを経てRequest serviceへ渡る認証済みidentityである。`expectedVersion`は全体で`int64`とする。OpenAPI operation名は対応するhandler/service methodへ直接mapする。
+- **レビュー重点項目:** Task 3はnormalize済みTitleとaudit content、Task 4はrace-safe mutation、Task 5はcallback replay、Task 6はCSRF/origin、Task 7はauthorization/error mappingをtestする。
