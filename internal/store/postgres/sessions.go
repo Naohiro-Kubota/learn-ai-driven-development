@@ -27,6 +27,15 @@ func (r *Repository) MembersForIdentity(ctx context.Context, issuer, subject str
 	return ids, rows.Err()
 }
 
+func (r *Repository) IdentityID(ctx context.Context, issuer, subject string) (string, error) {
+	var id string
+	err := r.db.QueryRowContext(ctx, `SELECT id FROM oidc_identities WHERE issuer = $1 AND subject = $2`, issuer, subject).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", auth.ErrNotFound
+	}
+	return id, err
+}
+
 func (r *Repository) CreateOrganizationSelection(ctx context.Context, input auth.OrganizationSelectionInput) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
