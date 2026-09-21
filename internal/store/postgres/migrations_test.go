@@ -24,8 +24,12 @@ func TestMigrationsCreateWorkflowAndAuthTables(t *testing.T) {
 	}
 	defer db.Close()
 	m, err := migrate.New("file://../../../migrations", os.Getenv("TEST_DATABASE_URL"))
-	if err != nil { t.Fatal(err) }
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		t.Fatal(err)
+	}
 	if err := db.Ping(); err != nil {
 		t.Fatal(err)
 	}
