@@ -2,11 +2,11 @@
 
 > **エージェント実行者向け:** この計画は、`superpowers:subagent-driven-development`（推奨）または`superpowers:executing-plans`を使い、タスク単位で実行すること。進捗はチェックボックス（`- [ ]`）で管理する。
 
-**目的:** 未承認のアプリケーション依存を導入せず、最初のVertical Sliceにおける認証済みGo HTTP APIのOpenAPI 3.1契約を実装する。
+**目的:** Accepted Decisionで選定済みの依存関係だけを用い、最初のVertical Sliceにおける認証済みGo HTTP APIのOpenAPI 3.1契約を実装する。
 
 **アーキテクチャ:** Goの`net/http` adapterは処理をアプリケーションサービスへ委譲し、サービスがrepository interfaceを通じてワークフローと認可規則を適用する。PostgreSQL repositoryは、Request・Approval・Audit Event・OIDC認証transaction・不透明なsessionを原子的に処理する。OIDCおよびsession middlewareがhandler実行前に認証済みActorを確立する。handlerの責務はDTOのdecode、unsafe methodのCSRF防御、型付きapplication errorからOpenAPI error modelへの変換だけとする。
 
-**技術スタック:** Go 1.27.1、`net/http`、`database/sql`、`httptest`、標準`crypto` package、pgx stdlib v5.11.0を用いるPostgreSQL、golang-migrate v4.20.1、`github.com/coreos/go-oidc/v3` v3.21.0、`golang.org/x/oauth2` v0.37.0、`api/openapi.yaml`のOpenAPI 3.1契約。
+**技術スタック:** Go 1.27.1、`net/http`、`database/sql`、`httptest`、標準`crypto` package、pgx stdlib v5.11.0を用いるPostgreSQL、golang-migrate v4.20.1、`github.com/coreos/go-oidc/v3` v3.21.0、`golang.org/x/oauth2` v0.37.0、Biome v2.5.14、`gofmt`、`go vet`、`api/openapi.yaml`のOpenAPI 3.1契約。
 
 **仕様:** `docs/superpowers/specs/2026-09-20-api-contract-design.md`
 
@@ -20,6 +20,9 @@
 - 全unsafe `/api/v1` operationでsessionに束縛した`X-CSRF-Token`と許可された`Origin`を必須とする。`SameSite`をCSRF防御として十分とは扱わない。
 - SubmitとApproveでは、一つのPostgreSQL transactionでRequest version更新とAudit Event追記を行う。古いversionには`409 version_conflict`を返す。
 - PostgreSQL integration testは事前に用意した`TEST_DATABASE_URL`を使用する。transaction/concurrency coverageでSQLiteやin-memory DBへ代替しない。
+- ADR-012に従い、TypeScript/TSX/JavaScript/JSONはBiome v2.5.14でformat/lintし、Go sourceは`gofmt`と`go vet ./...`で検査する。`tsc -b`、format/lint、`go vet`、testは相互の代替と扱わない。
+- Formatterはローカルでのみファイルを書き換えてよい。CIのformat/lint検査はworking treeを書き換えず、未整形または診断がある場合に失敗しなければならない。
+- Biomeは正確な直接`devDependency`として、`package.json`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`を同一変更でレビューして追加する。ADR-007で許可されていないbuild/install scriptを要求する場合は、この計画を停止して人間のレビューを求める。
 - 既存の未commit toolchain・Decision document変更は、人間のownerが明示的に含めない限り、この計画のcommit対象にしない。
 
 ## レビュー重点項目
@@ -31,6 +34,85 @@
 - 有効なsessionでも、CSRF tokenの欠落・不一致、または許可されないOriginではCreate、Update、Submit、Approve、logoutできず、`403 csrf_validation_failed`を返す。
 
 ---
+
+### Task 0: Formatter/Linterの品質ゲートを追加する
+
+**ファイル:**
+- 作成: `biome.json`
+- 作成: `scripts/check-gofmt.mjs`
+- 作成: `scripts/check-gofmt.test.mjs`
+- 変更: `package.json`
+- 変更: `pnpm-workspace.yaml`
+- 変更: `pnpm-lock.yaml`
+- 変更: `docs/development/toolchain.md`
+
+**Interface:**
+- 提供: `pnpm run format`（ローカルでBiomeの書式を修正）、`pnpm run format:check`（非破壊の書式検査）、`pnpm run lint`（Biome lint）、`pnpm run check:gofmt`（tracked Go sourceの非破壊`gofmt`検査）。
+- 提供: `scripts/check-gofmt.mjs`からimport可能な`findUnformattedFiles(files, runGofmt)`。
+- 利用元: 以降の全Task、Task 8の完全verification suite、CI。
+
+- [ ] **Step 1: 失敗する`gofmt`検査testを書く**
+
+`node:test`で、整形済みのGo sourceには空配列を返し、未整形のGo sourceにはそのfile pathを返すことをtestする。testは実際の`gofmt -l`を呼ばず、`runGofmt` test doubleを渡してexit statusと標準出力の処理を固定する。
+
+```js
+import test from "node:test";
+import assert from "node:assert/strict";
+import { findUnformattedFiles } from "./check-gofmt.mjs";
+
+test("reports paths printed by gofmt -l", () => {
+  const result = findUnformattedFiles(["internal/example.go"], () => "internal/example.go\n");
+  assert.deepEqual(result, ["internal/example.go"]);
+});
+```
+
+- [ ] **Step 2: focused testを実行して失敗を確認する**
+
+Run: `node --test scripts/check-gofmt.test.mjs`
+
+期待結果: `scripts/check-gofmt.mjs`と`findUnformattedFiles`が存在しないためFAIL。
+
+- [ ] **Step 3: Biome設定、Go検査script、package scriptを実装する**
+
+`@biomejs/biome` **2.5.14**を正確な`devDependency`として追加する。`biome.json`ではformatterとrecommended linterを有効にし、`node_modules`、`dist`、`coverage`、`playwright-report`、`test-results`を検査対象外にする。import整理やプロダクト固有ruleを暗黙に有効化しない。
+
+`scripts/check-gofmt.mjs`は、`git ls-files -z -- '*.go'`でtracked Go sourceだけを取得し、空の対象集合では成功する。対象がある場合は`gofmt -l`を実行し、出力pathを返す`findUnformattedFiles`を介して、1件以上ならpathを標準errorへ出力してexit 1、空ならexit 0とする。formatter自体は実行しない。
+
+`package.json`へ以下のscriptを追加する。
+
+```json
+{
+  "format": "biome format --write .",
+  "format:check": "biome format .",
+  "lint": "biome lint .",
+  "check:gofmt": "node scripts/check-gofmt.mjs",
+  "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run check:gofmt"
+}
+```
+
+`pnpm install --lockfile-only --ignore-scripts`でlockfileを更新する前に、ADR-007の`minimumReleaseAge`、`strictDepBuilds`、空の`allowBuilds`を確認する。Biomeまたはtransitive dependencyがbuild/install scriptの許可を要求した場合は、`allowBuilds`を編集せずに作業を止めて人間へ報告する。`docs/development/toolchain.md`にはBiome 2.5.14とADR-012を記録し、OIDC Go libraryの記載をAccepted ADR-010と矛盾しない内容へ更新する。
+
+- [ ] **Step 4: Formatter/Linterのfocused verificationを実行する**
+
+Run:
+
+```bash
+node --test scripts/check-gofmt.test.mjs
+pnpm install --frozen-lockfile
+pnpm run format:check
+pnpm run lint
+pnpm run check:gofmt
+GOTOOLCHAIN=go1.27.1 go vet ./...
+```
+
+期待結果: すべてPASS。`pnpm install`はlockfileを書き換えず、各検査はworking treeを書き換えない。
+
+- [ ] **Step 5: このタスクのファイルをcommitする**
+
+```bash
+git add biome.json scripts/check-gofmt.mjs scripts/check-gofmt.test.mjs package.json pnpm-workspace.yaml pnpm-lock.yaml docs/development/toolchain.md
+git commit -m "build: add TypeScript and Go quality checks"
+```
 
 ### Task 1: OIDC moduleと検証済みruntime configurationを追加する
 
@@ -490,7 +572,12 @@ Run:
 
 ```bash
 pnpm install --frozen-lockfile
+pnpm run format:check
+pnpm run lint
+pnpm run typecheck
+pnpm run check:gofmt
 pnpm run verify:openapi
+GOTOOLCHAIN=go1.27.1 go vet ./...
 GOTOOLCHAIN=go1.27.1 go test ./internal/domain ./internal/application/requests ./internal/auth ./internal/httpapi
 GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres ./internal/httpapi -count=1
 GOTOOLCHAIN=go1.27.1 go mod verify
@@ -508,7 +595,7 @@ git commit -m "test: verify API contract and local operation"
 
 ## 計画の自己レビュー
 
-- **仕様coverage:** Task 1/5はOIDC・PKCE・session・CSRFを扱う。Task 2/4はPostgreSQL、migration、audit、concurrencyを扱う。Task 3はPDRのworkflow ruleを扱う。Task 6/7は全OpenAPI operationとerror classを扱う。Task 8はcontract validationと再現可能な運用を扱う。
+- **仕様coverage:** Task 0はADR-012のFormatter/Linter、非破壊CI検査、ADR-007に従うBiome導入を扱う。Task 1/5はOIDC・PKCE・session・CSRFを扱う。Task 2/4はPostgreSQL、migration、audit、concurrencyを扱う。Task 3はPDRのworkflow ruleを扱う。Task 6/7は全OpenAPI operationとerror classを扱う。Task 8はcontract validation、品質ゲート、再現可能な運用を扱う。
 - **未完了表現の走査:** 全taskでファイル、interface、command、期待結果を明示している。
 - **型の整合性:** `application.Actor`は`internal/auth`からHTTP middlewareを経てRequest serviceへ渡る認証済みidentityである。`expectedVersion`は全体で`int64`とする。OpenAPI operation名は対応するhandler/service methodへ直接mapする。
-- **レビュー重点項目:** Task 3はnormalize済みTitleとaudit content、Task 4はrace-safe mutation、Task 5はcallback replay、Task 6はCSRF/origin、Task 7はauthorization/error mappingをtestする。
+- **レビュー重点項目:** Task 0は未整形Go sourceとCI非破壊性、Task 3はnormalize済みTitleとaudit content、Task 4はrace-safe mutation、Task 5はcallback replay、Task 6はCSRF/origin、Task 7はauthorization/error mappingをtestする。
