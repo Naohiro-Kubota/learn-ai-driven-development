@@ -1,0 +1,4 @@
+CREATE TABLE app_sessions (id text PRIMARY KEY, cookie_hash bytea NOT NULL UNIQUE, member_id text NOT NULL REFERENCES members(id), csrf_token_hash bytea NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), last_used_at timestamptz NOT NULL DEFAULT now(), idle_expires_at timestamptz NOT NULL, absolute_expires_at timestamptz NOT NULL, revoked_at timestamptz);
+CREATE INDEX app_sessions_active_lookup_idx ON app_sessions (cookie_hash) WHERE revoked_at IS NULL;
+CREATE TABLE oidc_auth_transactions (id text PRIMARY KEY, cookie_hash bytea NOT NULL UNIQUE, state_hash bytea NOT NULL UNIQUE, nonce text NOT NULL, encrypted_verifier bytea NOT NULL, issuer text NOT NULL, client_id text NOT NULL, redirect_uri text NOT NULL, expires_at timestamptz NOT NULL, consumed_at timestamptz);
+CREATE INDEX oidc_auth_transactions_active_lookup_idx ON oidc_auth_transactions (cookie_hash) WHERE consumed_at IS NULL;

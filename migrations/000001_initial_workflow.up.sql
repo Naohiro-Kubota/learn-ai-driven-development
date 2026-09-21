@@ -1,0 +1,7 @@
+CREATE TABLE organizations (id text PRIMARY KEY, name text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE members (id text PRIMARY KEY, organization_id text NOT NULL REFERENCES organizations(id), oidc_subject text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (organization_id, oidc_subject));
+CREATE TABLE member_roles (member_id text NOT NULL REFERENCES members(id), role text NOT NULL CHECK (role IN ('requester', 'approver', 'admin')), PRIMARY KEY (member_id, role));
+CREATE TABLE requests (id text PRIMARY KEY, organization_id text NOT NULL REFERENCES organizations(id), requester_id text NOT NULL REFERENCES members(id), title text NOT NULL, description text NOT NULL DEFAULT '', status text NOT NULL CHECK (status IN ('draft', 'pending', 'approved')), version bigint NOT NULL CHECK (version >= 1), created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE approvals (id text PRIMARY KEY, request_id text NOT NULL UNIQUE REFERENCES requests(id), assignee_id text NOT NULL REFERENCES members(id), status text NOT NULL CHECK (status IN ('pending', 'approved')), approved_at timestamptz);
+CREATE INDEX approvals_pending_assignee_idx ON approvals (assignee_id) WHERE status = 'pending';
+CREATE TABLE audit_events (id text PRIMARY KEY, request_id text NOT NULL REFERENCES requests(id), actor_member_id text NOT NULL REFERENCES members(id), event_type text NOT NULL, occurred_at timestamptz NOT NULL DEFAULT now(), content_snapshot jsonb, approval_metadata jsonb);

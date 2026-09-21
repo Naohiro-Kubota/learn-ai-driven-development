@@ -13,6 +13,7 @@
 		"dev": "vite",
 		"test": "vitest run",
 		"test:e2e": "playwright test",
+		"test:db": "node scripts/test-postgres.mjs",
 		"typecheck": "tsc -b --pretty false",
 		"format": "biome format --write .",
 		"format:check": "biome format .",

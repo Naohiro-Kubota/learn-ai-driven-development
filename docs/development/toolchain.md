@@ -40,3 +40,4 @@ Go sourceはADR-012に従い`gofmt`でformatし、`go vet ./...`で静的解析�
 - pnpmの`minimumReleaseAge`、`blockExoticSubdeps`、`strictStorePkgContentCheck`、`strictDepBuilds`、`allowBuilds`は`pnpm-workspace.yaml`を正本とする。
 - Go moduleは`go.mod`と`go.sum`をコミットする。依存更新はGo module versionと間接依存の差分をレビューする。
 - Keycloak imageはtagだけで運用せず、provisioning時に対応するcontainer digestを記録する。development modeはローカル/E2E限定である。
+- PostgreSQL migration統合テストは`pnpm run test:db`を使用する。これは`compose.test.yaml`で一時的なPostgreSQL 17.11 containerを起動し、`TEST_DATABASE_URL`を注入してから、終了時にcontainerとvolumeを破棄する。
