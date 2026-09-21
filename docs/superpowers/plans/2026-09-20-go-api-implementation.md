@@ -426,7 +426,7 @@ git commit -m "feat: add OIDC login and opaque sessions"
 
 **Interface:**
 - 利用: `auth.Authenticator`、`auth.SessionStore`、`config.Config`、Request application service。
-- 提供: `GET /auth/oidc/login`、`GET /auth/oidc/callback`、`GET /api/v1/session`、`POST /api/v1/session/logout`を持つ`http.Handler`。
+- 提供: `GET /auth/oidc/login`、`GET /auth/oidc/callback`、`GET /auth/oidc/organization-selection`、`POST /auth/oidc/organization-selection`、`GET /api/v1/session`、`POST /api/v1/session/logout`を持つ`http.Handler`。複数Organization候補のcallbackは選択transaction cookieを発行し、選択成功後だけMember-bound sessionを発行する。
 - 提供: 型付きerrorをOpenAPIの`ErrorResponse`へmapする`WriteError(http.ResponseWriter, APIError)`。
 
 - [ ] **Step 1: 失敗するhandler testを書く**

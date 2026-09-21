@@ -64,11 +64,11 @@ Task 5 のsession/OIDC repositoryは、既存Request repositoryと同じ `intern
 - `app_sessions`: cookie hash、Member ID、CSRF token hash、created/last-used、idle/absolute expiry、revocation
 - `oidc_auth_transactions`: cookie hash、state hash、nonce、暗号化PKCE verifier、issuer/client/redirect、expiry、consumed marker
 
-Task 5 で migration を追加・変更してはならない。既存schemaの欠落を発見した場合、実装を止めて矛盾を報告する。
+ADR-013のAccepted後、Task 5はmigration `000004`でOIDC identity、Member対応表、Organization選択transaction、および`oidc_auth_transactions.created_at`を追加する。migration `000001`〜`000003`は変更しない。既存Memberは、検証済みissuerを指定した明示的provisioningで`oidc_identities`と`member_oidc_identities`へ対応付けてからloginを有効化する。
 
 ## Task 5 の実装範囲
 
-作成するファイルは次に限定する。
+Task 5で作成・変更するファイルは次に限定する。
 
 - `internal/auth/oidc.go`
 - `internal/auth/oidc_test.go`
@@ -76,12 +76,16 @@ Task 5 で migration を追加・変更してはならない。既存schemaの�
 - `internal/auth/session_test.go`
 - `internal/store/postgres/sessions.go`
 - `internal/store/postgres/sessions_test.go`
+- `migrations/000004_oidc_identity_memberships.up.sql`
+- `migrations/000004_oidc_identity_memberships.down.sql`
 
 範囲外:
 
 - HTTP router/handler、CSRF/origin middleware、frontend、Keycloak Compose/realm provision
 - Request workflow、migration、OpenAPI契約の変更
 - refresh token、Provider連携logout、複数region、key rotation、Admin workflow管理
+
+複数Member候補のOrganization選択HTTP endpointと画面遷移はTask 6で追加する。Task 5は選択transactionの生成・候補snapshot・単回消費をauth/repository境界で実装する。
 
 ## 実装・セキュリティ要件
 
