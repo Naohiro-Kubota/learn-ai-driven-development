@@ -1,0 +1,37 @@
+# Project-local Codex permissions.
+#
+# This file is loaded only after this repository is trusted by Codex.
+# Network access is deliberately restricted to package registries and GitHub.
+
+# Commands allowed by the workspace sandbox, including the permitted network
+# destinations below, run without approval. Operations that need to write
+# protected paths such as .git remain approval-gated.
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true
+
+[features.network_proxy]
+enabled = true
+
+[features.network_proxy.domains]
+"api.github.com" = "allow"
+"codeload.github.com" = "allow"
+"github.com" = "allow"
+"objects.githubusercontent.com" = "allow"
+"proxy.golang.org" = "allow"
+"registry.npmjs.org" = "allow"
+"sum.golang.org" = "allow"
+
+# Deny Codex-issued Git/GitHub commands that mutate, switch to, or explicitly
+# target the protected main/develop branches. The hook's source is versioned
+# with this repository for reviewability.
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '/usr/bin/python3 "$(git rev-parse --show-toplevel)/.codex/hooks/protect_branches.py"'
+timeout = 5
+statusMessage = "保護ブランチへの操作を確認中"
