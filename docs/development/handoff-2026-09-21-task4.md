@@ -51,8 +51,11 @@ Task 3 で使用する Audit Event 名は、OpenAPI の enum と一致させた 
 
 ## Task 4 の実装範囲
 
-作成するファイルは次に限定する。
+作成・変更するファイルは次に限定する。PDR-002の既定Approverを既存migrationが永続化できない矛盾が確認され、人間の承認を得たため、schema補完として`000003` migrationとmigration integration testの変更をこのTaskに含める。
 
+- `migrations/000003_organization_default_approver.up.sql`
+- `migrations/000003_organization_default_approver.down.sql`
+- `internal/store/postgres/migrations_test.go`
 - `internal/store/postgres/requests.go`
 - `internal/store/postgres/requests_test.go`
 - `internal/store/postgres/seed_test.go`
@@ -60,13 +63,13 @@ Task 3 で使用する Audit Event 名は、OpenAPI の enum と一致させた 
 次の作業は Task 4 の範囲外である。
 
 - HTTP handler、OIDC/session、frontend
-- migration の追加・変更
+- `000003_organization_default_approver`以外の migration の追加・変更
 - ORM、query builder、test container などの新規 dependency
 - workflow の再割当、Reject、Cancel、複数 Approval Step
 
 ## 永続化と整合性の要件
 
-`migrations/000001_initial_workflow.up.sql` の `requests`、`approvals`、`audit_events` を使用する。
+`migrations/000001_initial_workflow.up.sql` の `requests`、`approvals`、`audit_events` と、`000003_organization_default_approver`の`organizations.default_approver_member_id`を使用する。既定Approverは同一OrganizationのMemberへ設定し、`DefaultApprover`は設定済みMemberとその`approver` roleを別々に確認する。
 
 - Submit と Approve は各々 1 個の PostgreSQL transaction で、Request の条件付き更新、Approval の作成または更新、Audit Event の追記を完了させる。
 - Request 更新の predicate には必ず `id`、`version`、期待する `status` を含める。`RowsAffected()==0` の場合、最新 Request を確認して `ErrVersionConflict` と `ErrInvalidState` を区別する。
