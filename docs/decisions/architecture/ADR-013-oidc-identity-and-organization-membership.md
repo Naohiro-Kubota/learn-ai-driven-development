@@ -1,6 +1,6 @@
 # ADR-013: OIDC Identity と複数 Organization Member の対応
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-21
 - Owners: Human project owner
 - Related requirements: FR-001, FR-002, FR-003, FR-005, FR-007, FR-012, FR-013, NFR-001, NFR-002, NFR-003, NFR-004, NFR-006

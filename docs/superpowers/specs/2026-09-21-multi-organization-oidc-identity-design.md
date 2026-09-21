@@ -1,7 +1,7 @@
 # 複数Organization対応OIDC Identity設計
 
 更新日: 2026-09-21  
-Status: Proposed design — implementation approval pending  
+Status: Accepted design — implementation plan review pending
 Related decision: `docs/decisions/architecture/ADR-013-oidc-identity-and-organization-membership.md`
 
 ## 目的と成功条件
