@@ -42,6 +42,18 @@ func TestMigrationsCreateWorkflowAndAuthTables(t *testing.T) {
 			t.Fatalf("table %s does not exist", table)
 		}
 	}
+	if _, err := db.Exec(`INSERT INTO organizations (id, name) VALUES ('org-default', 'Default organization'), ('org-other', 'Other organization')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO members (id, organization_id, oidc_subject) VALUES ('approver-default', 'org-default', 'approver-default'), ('approver-other', 'org-other', 'approver-other')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE organizations SET default_approver_member_id = 'approver-default' WHERE id = 'org-default'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE organizations SET default_approver_member_id = 'approver-other' WHERE id = 'org-default'`); err == nil {
+		t.Fatal("cross-organization default approver was accepted")
+	}
 	if err := m.Down(); err != nil {
 		t.Fatal(err)
 	}

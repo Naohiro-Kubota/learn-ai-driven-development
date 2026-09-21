@@ -308,6 +308,9 @@ git commit -m "feat: add request workflow application service"
 ### Task 4: PostgreSQL repositoryとtransactional concurrency testを実装する
 
 **ファイル:**
+- 作成: `migrations/000003_organization_default_approver.up.sql`
+- 作成: `migrations/000003_organization_default_approver.down.sql`
+- 変更: `internal/store/postgres/migrations_test.go`
 - 作成: `internal/store/postgres/requests.go`
 - 作成: `internal/store/postgres/requests_test.go`
 - 作成: `internal/store/postgres/seed_test.go`
@@ -316,6 +319,8 @@ git commit -m "feat: add request workflow application service"
 - 実装: `internal/application/requests.Repository`。
 - 利用: `*sql.DB`とTask 2のmigration。
 - 提供: transactionを使うDraft/Submit/Approve persistenceとDTO変換可能なdomain value。
+
+PDR-002でAcceptedとなっているOrganization既定Approverを永続化するため、最初に`000003` migrationで`organizations.default_approver_member_id`を追加する。この参照先は同一OrganizationのMemberに限定し、既定Approverの未設定はapplication serviceが既存どおり`ErrApprovalRoutingUnavailable`へ変換する。詳細は`docs/superpowers/plans/2026-09-21-default-approver-schema-repair.md`を参照する。
 
 - [ ] **Step 1: 失敗するPostgreSQL integration testを書く**
 
