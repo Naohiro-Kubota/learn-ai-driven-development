@@ -2,10 +2,8 @@ package postgres
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"time"
 
@@ -152,7 +150,7 @@ func (r *Repository) Authenticate(ctx context.Context, cookie string, now time.T
 }
 
 func (r *Repository) IssueCSRFToken(ctx context.Context, sessionID string, now time.Time) (string, error) {
-	token, err := csrfToken()
+	token, err := auth.NewCSRFToken()
 	if err != nil {
 		return "", err
 	}
@@ -220,7 +218,7 @@ func (r *Repository) ReadAndIssueCSRFToken(ctx context.Context, cookie string, n
 	if err := rows.Err(); err != nil {
 		return auth.OrganizationSelection{}, err
 	}
-	token, err := csrfToken()
+	token, err := auth.NewCSRFToken()
 	if err != nil {
 		return auth.OrganizationSelection{}, err
 	}
@@ -233,14 +231,6 @@ func (r *Repository) ReadAndIssueCSRFToken(ctx context.Context, cookie string, n
 	}
 	selection.CSRFToken = token
 	return selection, nil
-}
-
-func csrfToken() (string, error) {
-	value := make([]byte, 32)
-	if _, err := rand.Read(value); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(value), nil
 }
 
 func (r *Repository) CompleteOrganizationSelection(ctx context.Context, input auth.CompleteOrganizationSelectionInput, session auth.SessionInput) error {

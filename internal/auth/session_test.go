@@ -52,12 +52,12 @@ func TestSessionCookiePolicy(t *testing.T) {
 	}
 }
 
-func TestIssueCSRFTokenGeneratesFreshOpaqueValues(t *testing.T) {
-	first, err := newCSRFToken()
+func TestNewCSRFTokenGeneratesFreshOpaqueValues(t *testing.T) {
+	first, err := NewCSRFToken()
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := newCSRFToken()
+	second, err := NewCSRFToken()
 	if err != nil {
 		t.Fatal(err)
 	}
