@@ -66,6 +66,76 @@ func TestIssueCSRFTokenReplacesStoredHash(t *testing.T) {
 	assertSessionCSRFHash(t, db, "session-1", sha256.Sum256([]byte(second)))
 }
 
+func TestAuthenticateRejectsRevokedAndExpiredSessions(t *testing.T) {
+	now := time.Date(2026, time.September, 22, 9, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name    string
+		session auth.SessionInput
+		revoke  bool
+	}{
+		{name: "revoked", session: testSessionInput(now), revoke: true},
+		{name: "idle expired", session: sessionInputWithExpiry(now.Add(-time.Second), now.Add(time.Hour))},
+		{name: "absolute expired", session: sessionInputWithExpiry(now.Add(time.Hour), now.Add(-time.Second))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openWorkflowTestDatabase(t)
+			seedSessionDatabase(t, db)
+			r := NewRepository(db)
+			if err := r.CreateSession(context.Background(), tc.session); err != nil {
+				t.Fatal(err)
+			}
+			if tc.revoke {
+				if err := r.Revoke(context.Background(), tc.session.Cookie, now); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := r.Authenticate(context.Background(), tc.session.Cookie, now)
+			if !errors.Is(err, auth.ErrNotFound) {
+				t.Fatalf("err = %v, want not found", err)
+			}
+		})
+	}
+}
+
+func TestIssueCSRFTokenRejectsInactiveSessionsWithoutChangingStoredHash(t *testing.T) {
+	now := time.Date(2026, time.September, 22, 9, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name        string
+		session     *auth.SessionInput
+		revoke      bool
+		wantRecords int
+	}{
+		{name: "missing", wantRecords: 0},
+		{name: "revoked", session: pointerTo(testSessionInput(now)), revoke: true, wantRecords: 1},
+		{name: "idle expired", session: pointerTo(sessionInputWithExpiry(now.Add(-time.Second), now.Add(time.Hour))), wantRecords: 1},
+		{name: "absolute expired", session: pointerTo(sessionInputWithExpiry(now.Add(time.Hour), now.Add(-time.Second))), wantRecords: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openWorkflowTestDatabase(t)
+			seedSessionDatabase(t, db)
+			r := NewRepository(db)
+			if tc.session != nil {
+				if err := r.CreateSession(context.Background(), *tc.session); err != nil {
+					t.Fatal(err)
+				}
+				if tc.revoke {
+					if err := r.Revoke(context.Background(), tc.session.Cookie, now); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			_, err := r.IssueCSRFToken(context.Background(), "session-1", now)
+			if !errors.Is(err, auth.ErrNotFound) {
+				t.Fatalf("err = %v, want not found", err)
+			}
+			assertAppSessionCount(t, db, tc.wantRecords)
+			if tc.session != nil {
+				assertSessionCSRFHash(t, db, tc.session.ID, sha256.Sum256([]byte(tc.session.CSRFToken)))
+			}
+		})
+	}
+}
+
 func TestOrganizationSelectionReadAndIssueCSRFTokenReturnsSnapshot(t *testing.T) {
 	db := openWorkflowTestDatabase(t)
 	if _, err := db.Exec(`TRUNCATE organization_selection_transaction_members, organization_selection_transactions, member_oidc_identities, oidc_identities, app_sessions, member_roles, members, organizations RESTART IDENTITY CASCADE`); err != nil {
@@ -255,7 +325,7 @@ func TestMembersForIdentityReturnsMembershipsAcrossOrganizations(t *testing.T) {
 	}
 }
 
-func TestConsumeOrganizationSelectionRejectsCandidateOutsideSnapshot(t *testing.T) {
+func TestOrganizationSelectionCompletionRejectsCandidateOutsideSnapshot(t *testing.T) {
 	db := openWorkflowTestDatabase(t)
 	if _, err := db.Exec(`TRUNCATE organization_selection_transaction_members, organization_selection_transactions, member_oidc_identities, oidc_identities, app_sessions, member_roles, members, organizations RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatal(err)
@@ -268,14 +338,37 @@ func TestConsumeOrganizationSelectionRejectsCandidateOutsideSnapshot(t *testing.
 	if err := r.CreateOrganizationSelection(context.Background(), auth.OrganizationSelectionInput{ID: "selection-1", Cookie: "selection-cookie", CSRFToken: "selection-csrf", IdentityID: "identity-1", MemberIDs: []string{"member-1"}, ExpiresAt: now.Add(time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := r.ConsumeOrganizationSelection(context.Background(), auth.ConsumeOrganizationSelectionInput{Cookie: "selection-cookie", CSRFToken: "selection-csrf", MemberID: "member-2", Now: now, Session: auth.SessionInput{ID: "session-1", Cookie: "session-cookie", CSRFToken: "session-csrf", MemberID: "member-2", CreatedAt: now, IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(time.Hour)}})
+	err := r.CompleteOrganizationSelection(context.Background(), auth.CompleteOrganizationSelectionInput{Cookie: "selection-cookie", CSRFToken: "selection-csrf", MemberID: "member-2", Now: now}, auth.SessionInput{ID: "session-1", Cookie: "session-cookie", CSRFToken: "session-csrf", MemberID: "member-2", CreatedAt: now, IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(time.Hour)})
 	if !errors.Is(err, auth.ErrForbidden) {
 		t.Fatalf("err = %v, want forbidden", err)
 	}
-	_, err = r.ConsumeOrganizationSelection(context.Background(), auth.ConsumeOrganizationSelectionInput{Cookie: "selection-cookie", CSRFToken: "selection-csrf", MemberID: "member-1", Now: now, Session: auth.SessionInput{ID: "session-2", Cookie: "session-cookie-2", CSRFToken: "session-csrf-2", MemberID: "member-1", CreatedAt: now, IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(time.Hour)}})
+	assertAppSessionCount(t, db, 0)
+	err = r.CompleteOrganizationSelection(context.Background(), auth.CompleteOrganizationSelectionInput{Cookie: "selection-cookie", CSRFToken: "selection-csrf", MemberID: "member-1", Now: now}, auth.SessionInput{ID: "session-2", Cookie: "session-cookie-2", CSRFToken: "session-csrf-2", MemberID: "member-1", CreatedAt: now, IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(time.Hour)})
 	if !errors.Is(err, auth.ErrConsumed) {
 		t.Fatalf("replay err = %v, want consumed", err)
 	}
+}
+
+func seedSessionDatabase(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(`TRUNCATE app_sessions, member_roles, members, organizations RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO organizations (id, name) VALUES ('org-1', 'One'); INSERT INTO members (id, organization_id, oidc_subject) VALUES ('member-1', 'org-1', 'subject-1')`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testSessionInput(now time.Time) auth.SessionInput {
+	return sessionInputWithExpiry(now.Add(time.Hour), now.Add(2*time.Hour))
+}
+
+func sessionInputWithExpiry(idleExpiresAt, absoluteExpiresAt time.Time) auth.SessionInput {
+	return auth.SessionInput{ID: "session-1", Cookie: "session-cookie", CSRFToken: "initial-csrf", MemberID: "member-1", CreatedAt: time.Date(2026, time.September, 22, 8, 0, 0, 0, time.UTC), IdleExpiresAt: idleExpiresAt, AbsoluteExpiresAt: absoluteExpiresAt}
+}
+
+func pointerTo[T any](value T) *T {
+	return &value
 }
 
 func TestConsumeOrganizationSelectionRejectsDifferentIssuedMember(t *testing.T) {
