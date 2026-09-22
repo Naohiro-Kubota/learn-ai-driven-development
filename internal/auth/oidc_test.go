@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -116,6 +117,7 @@ func TestOIDCCompleteLoginVerifiesTokenAndBranchesByMembershipCount(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
+			provider.setChallenge(t, start.AuthorizationURL)
 			provider.token = provider.signedToken(t, store.created.Nonce, nil)
 			result, err := a.CompleteLogin(context.Background(), CallbackInput{TransactionCookie: start.TransactionCookie, State: store.created.State, Code: "valid"})
 			if err != nil {
@@ -156,6 +158,7 @@ func TestOIDCCompleteLoginRejectsInvalidTokenClaimsAndConsumesTransaction(t *tes
 			if err != nil {
 				t.Fatal(err)
 			}
+			provider.setChallenge(t, start.AuthorizationURL)
 			provider.token = provider.signedToken(t, store.created.Nonce, tc.claims)
 			if _, err := a.CompleteLogin(context.Background(), CallbackInput{TransactionCookie: start.TransactionCookie, State: store.created.State, Code: "valid"}); err == nil {
 				t.Fatal("invalid token was accepted")
@@ -167,10 +170,57 @@ func TestOIDCCompleteLoginRejectsInvalidTokenClaimsAndConsumesTransaction(t *tes
 	}
 }
 
+func TestOIDCTestProviderRejectsPKCEVerifierMismatch(t *testing.T) {
+	provider := newOIDCTestProvider(t)
+	defer provider.server.Close()
+	store := &oidcStoreFake{}
+	a, err := NewOIDCAuthenticator(context.Background(), provider.config(), store, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, err := a.BeginLogin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.setChallenge(t, start.AuthorizationURL)
+	response, err := http.PostForm(provider.server.URL+"/token", url.Values{"code": {"valid"}, "code_verifier": {"wrong-verifier"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestOIDCCompleteLoginConsumesTransactionWhenPKCERejected(t *testing.T) {
+	provider := newOIDCTestProvider(t)
+	defer provider.server.Close()
+	store := &oidcStoreFake{members: []string{"member-1"}}
+	a, err := NewOIDCAuthenticator(context.Background(), provider.config(), store, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, err := a.BeginLogin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.setChallenge(t, start.AuthorizationURL)
+	provider.challenge = "wrong-challenge"
+	provider.token = provider.signedToken(t, store.created.Nonce, nil)
+	if _, err := a.CompleteLogin(context.Background(), CallbackInput{TransactionCookie: start.TransactionCookie, State: store.created.State, Code: "valid"}); err == nil {
+		t.Fatal("PKCE mismatch was accepted")
+	}
+	if !store.consumed || store.session.ID != "" {
+		t.Fatalf("consumed=%v session=%#v", store.consumed, store.session)
+	}
+}
+
 type oidcTestProvider struct {
 	server          *httptest.Server
 	private         *rsa.PrivateKey
 	token, verifier string
+	challenge       string
 }
 
 func newOIDCTestProvider(t *testing.T) *oidcTestProvider {
@@ -190,7 +240,8 @@ func newOIDCTestProvider(t *testing.T) *oidcTestProvider {
 		case "/token":
 			_ = r.ParseForm()
 			p.verifier = r.Form.Get("code_verifier")
-			if p.verifier == "" || r.Form.Get("code") != "valid" {
+			verifierHash := sha256.Sum256([]byte(p.verifier))
+			if p.verifier == "" || r.Form.Get("code") != "valid" || p.challenge == "" || base64.RawURLEncoding.EncodeToString(verifierHash[:]) != p.challenge {
 				http.Error(w, "invalid grant", http.StatusBadRequest)
 				return
 			}
@@ -203,6 +254,17 @@ func newOIDCTestProvider(t *testing.T) *oidcTestProvider {
 }
 func (p *oidcTestProvider) config() config.Config {
 	return config.Config{OIDCIssuer: p.server.URL, OIDCClientID: "client", OIDCRedirectURI: "https://app.example/callback", AuthTransactionTTL: time.Minute, SessionIdleTTL: time.Hour, SessionAbsoluteTTL: 2 * time.Hour}
+}
+func (p *oidcTestProvider) setChallenge(t *testing.T, rawAuthorizationURL string) {
+	t.Helper()
+	authorizationURL, err := url.Parse(rawAuthorizationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.challenge = authorizationURL.Query().Get("code_challenge")
+	if p.challenge == "" || authorizationURL.Query().Get("code_challenge_method") != "S256" {
+		t.Fatalf("authorization URL has invalid PKCE parameters: %s", rawAuthorizationURL)
+	}
 }
 func (p *oidcTestProvider) signedToken(t *testing.T, nonce string, overrides map[string]any) string {
 	t.Helper()
