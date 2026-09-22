@@ -31,7 +31,7 @@ func (r *router) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		cookie, err := request.Cookie(auth.SessionCookie("", r.dependencies.Config.CookieSecure).Name)
 		if err != nil || cookie.Value == "" {
-			WriteError(w, APIError{http.StatusUnauthorized, "authentication_required"})
+			WriteError(w, APIError{Status: http.StatusUnauthorized, Code: "authentication_required"})
 			return
 		}
 		session, err := r.dependencies.SessionStore.Authenticate(request.Context(), cookie.Value, r.dependencies.Now())
@@ -52,13 +52,13 @@ func (r *router) RequireSession(next http.Handler) http.Handler {
 func (r *router) RequireCSRF(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if !r.validOrigin(request) {
-			WriteError(w, APIError{http.StatusForbidden, "csrf_validation_failed"})
+			WriteError(w, APIError{Status: http.StatusForbidden, Code: "csrf_validation_failed"})
 			return
 		}
 		value, ok := request.Context().Value(sessionContextKey{}).(authenticatedRequest)
 		token := singleHeader(request.Header, "X-CSRF-Token")
 		if !ok || token == "" {
-			WriteError(w, APIError{http.StatusForbidden, "csrf_validation_failed"})
+			WriteError(w, APIError{Status: http.StatusForbidden, Code: "csrf_validation_failed"})
 			return
 		}
 		if err := r.dependencies.SessionStore.ValidateCSRFToken(request.Context(), value.cookie, token, r.dependencies.Now()); err != nil {
@@ -106,10 +106,10 @@ func (r *router) logout(w http.ResponseWriter, request *http.Request) {
 func sessionAPIError(err error) APIError {
 	switch {
 	case errors.Is(err, auth.ErrCSRFValidation):
-		return APIError{http.StatusForbidden, "csrf_validation_failed"}
+		return APIError{Status: http.StatusForbidden, Code: "csrf_validation_failed"}
 	case errors.Is(err, auth.ErrNotFound), errors.Is(err, auth.ErrExpired), errors.Is(err, auth.ErrInvalidAuthentication):
-		return APIError{http.StatusUnauthorized, "authentication_required"}
+		return APIError{Status: http.StatusUnauthorized, Code: "authentication_required"}
 	default:
-		return APIError{http.StatusInternalServerError, "internal_error"}
+		return APIError{Status: http.StatusInternalServerError, Code: "internal_error"}
 	}
 }
