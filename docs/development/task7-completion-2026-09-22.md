@@ -50,3 +50,7 @@ Request/Approval/Audit の server-derived read model、OpenAPI DTO/error mapping
 - `git diff --check`: PASS。
 
 未解決事項: なし。テスト用PostgreSQL container/network/volume は検証後に破棄済み。
+
+## 統合記録
+
+Task 7の実装はPR #14としてレビューされ、2026-09-23に承認後`develop`ブランチへマージされた。この記録は、実装・検証・レビュー・統合の追跡可能性を補完するものであり、Task 7の振る舞い、Decision、検証結果を変更しない。
