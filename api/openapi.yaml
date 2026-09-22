@@ -41,7 +41,9 @@ paths:
       summary: Validate the OIDC callback and establish an application session
       description: |
         The callback consumes the one-time authentication transaction. On success,
-        it issues a new application session cookie and redirects to the UI. A
+        it issues a new application session cookie and redirects to `/`, or issues
+        a short-lived Organization-selection cookie and redirects to
+        `/organization-selection` when multiple memberships exist. A
         callback must provide either `code` and `state`, or an OAuth error.
       parameters:
         - name: code
@@ -66,7 +68,7 @@ paths:
             type: string
       responses:
         '302':
-          description: Session established and browser redirected to the UI.
+          description: Session established or Organization selection required; redirect to a fixed local UI path.
           headers:
             Location:
               required: true
@@ -74,11 +76,84 @@ paths:
                 type: string
                 format: uri-reference
             Set-Cookie:
-              description: New application session cookie.
+              description: New application session or Organization-selection cookie; the authentication transaction cookie is cleared.
               schema:
                 type: string
         '400':
           $ref: '#/components/responses/InvalidAuthTransaction'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /auth/oidc/organization-selection:
+    get:
+      tags: [Authentication]
+      operationId: getOrganizationSelection
+      summary: Get the Organization candidates and a fresh selection CSRF token
+      description: |
+        Returns only the server-side transaction's candidate snapshot. Each read
+        rotates the CSRF token, invalidating the token returned by an earlier read.
+        Responses must not be cached.
+      security:
+        - organizationSelectionCookie: []
+      responses:
+        '200':
+          description: Candidate memberships and the newly issued synchronizer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationSelection'
+        '400':
+          $ref: '#/components/responses/InvalidAuthTransaction'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags: [Authentication]
+      operationId: selectOrganization
+      summary: Select a candidate Member and establish an application session
+      description: |
+        Requires the exact configured Origin and the current selection-bound
+        X-CSRF-Token. A recognized selection attempt is consumed atomically,
+        including CSRF mismatch or selection of a Member outside the snapshot.
+        Replays cannot create a session. Successful selection clears the selection
+        cookie and redirects to `/`; client-supplied redirect destinations are ignored.
+      security:
+        - organizationSelectionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectOrganizationInput'
+      responses:
+        '302':
+          description: Selected Member session established; browser redirected to the fixed local UI path.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                const: /
+            Set-Cookie:
+              description: New application session cookie and cleared Organization-selection cookie.
+              schema:
+                type: string
+        '400':
+          description: Missing, expired, or consumed selection state (invalid_auth_transaction), or malformed input (invalid_request).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidAuthTransaction:
+                  value:
+                    code: invalid_auth_transaction
+                    message: The sign-in request is no longer valid.
+                invalidRequest:
+                  value:
+                    code: invalid_request
+                    message: Request validation failed.
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
         '500':
           $ref: '#/components/responses/InternalServerError'
   /api/v1/session:
@@ -311,11 +386,16 @@ components:
       in: cookie
       name: __Host-approval_flow_session
       description: Opaque, server-side application session identifier.
+    organizationSelectionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-approval_flow_organization_selection
+      description: Short-lived opaque server-side selection transaction; HttpOnly, Secure, SameSite=Lax, Path=/, no Domain. Loopback development uses approval_flow_organization_selection without Secure.
     csrfToken:
       type: apiKey
       in: header
       name: X-CSRF-Token
-      description: Session-bound synchronizer token required for unsafe methods.
+      description: Session-bound or Organization-selection-bound synchronizer token required for unsafe methods.
   parameters:
     RequestId:
       name: requestId
@@ -340,7 +420,7 @@ components:
                 code: required
                 message: Title must not be blank.
     InvalidAuthTransaction:
-      description: Invalid, expired, or previously consumed OIDC authentication transaction.
+      description: Missing, invalid, expired, or previously consumed OIDC authentication or Organization-selection transaction.
       content:
         application/json:
           schema:
@@ -420,6 +500,39 @@ components:
             code: internal_error
             message: An unexpected error occurred.
   schemas:
+    OrganizationSelectionCandidate:
+      type: object
+      additionalProperties: false
+      required: [memberId, organizationId, organizationName]
+      properties:
+        memberId:
+          type: string
+          minLength: 1
+        organizationId:
+          type: string
+          minLength: 1
+        organizationName:
+          type: string
+    OrganizationSelection:
+      type: object
+      additionalProperties: false
+      required: [candidates, csrfToken]
+      properties:
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrganizationSelectionCandidate'
+        csrfToken:
+          type: string
+          minLength: 1
+    SelectOrganizationInput:
+      type: object
+      additionalProperties: false
+      required: [memberId]
+      properties:
+        memberId:
+          type: string
+          minLength: 1
     Session:
       type: object
       additionalProperties: false

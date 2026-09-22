@@ -238,8 +238,8 @@ func TestOrganizationSelectionCompletionConsumesIncorrectCSRFWithoutSession(t *t
 	session := auth.SessionInput{ID: "session-1", Cookie: "session-cookie", CSRFToken: "session-csrf", MemberID: "member-1", CreatedAt: now, IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(2 * time.Hour)}
 
 	err := r.CompleteOrganizationSelection(context.Background(), auth.CompleteOrganizationSelectionInput{Cookie: "selection-cookie", CSRFToken: "incorrect-csrf", MemberID: "member-1", Now: now}, session)
-	if !errors.Is(err, auth.ErrForbidden) {
-		t.Fatalf("err = %v, want forbidden", err)
+	if !errors.Is(err, auth.ErrCSRFValidation) || errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("err = %v, want CSRF validation failure distinct from forbidden", err)
 	}
 	assertSelectionConsumed(t, db, "selection-1")
 	assertAppSessionCount(t, db, 0)

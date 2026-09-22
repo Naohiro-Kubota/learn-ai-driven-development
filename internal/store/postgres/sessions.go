@@ -270,7 +270,7 @@ func (r *Repository) CompleteOrganizationSelection(ctx context.Context, input au
 		if err := tx.Commit(); err != nil {
 			return err
 		}
-		return auth.ErrForbidden
+		return auth.ErrCSRFValidation
 	}
 	var candidate bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM organization_selection_transaction_members WHERE transaction_id = $1 AND member_id = $2)`, id, input.MemberID).Scan(&candidate); err != nil {
