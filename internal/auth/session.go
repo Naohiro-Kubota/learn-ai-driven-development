@@ -19,11 +19,12 @@ const (
 )
 
 var (
-	ErrNotFound       = fmt.Errorf("auth record not found")
-	ErrExpired        = fmt.Errorf("auth record expired")
-	ErrConsumed       = fmt.Errorf("auth record consumed")
-	ErrForbidden      = fmt.Errorf("auth selection forbidden")
-	ErrCSRFValidation = fmt.Errorf("auth CSRF validation failed")
+	ErrNotFound              = fmt.Errorf("auth record not found")
+	ErrExpired               = fmt.Errorf("auth record expired")
+	ErrConsumed              = fmt.Errorf("auth record consumed")
+	ErrForbidden             = fmt.Errorf("auth selection forbidden")
+	ErrCSRFValidation        = fmt.Errorf("auth CSRF validation failed")
+	ErrInvalidAuthentication = fmt.Errorf("authentication response invalid")
 )
 
 type OrganizationSelectionInput struct {
