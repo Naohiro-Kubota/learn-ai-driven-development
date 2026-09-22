@@ -74,8 +74,9 @@ func (r *Repository) ConsumeAuthTransaction(ctx context.Context, cookie, state s
 	defer tx.Rollback()
 	ch, sh := sha256.Sum256([]byte(cookie)), sha256.Sum256([]byte(state))
 	var result auth.AuthTransaction
+	var storedState []byte
 	var consumed sql.NullTime
-	err = tx.QueryRowContext(ctx, `SELECT id, nonce, encrypted_verifier, issuer, client_id, redirect_uri, expires_at, consumed_at FROM oidc_auth_transactions WHERE cookie_hash=$1 AND state_hash=$2 FOR UPDATE`, ch[:], sh[:]).Scan(&result.ID, &result.Nonce, &result.EncryptedVerifier, &result.Issuer, &result.ClientID, &result.RedirectURI, &result.ExpiresAt, &consumed)
+	err = tx.QueryRowContext(ctx, `SELECT id, state_hash, nonce, encrypted_verifier, issuer, client_id, redirect_uri, expires_at, consumed_at FROM oidc_auth_transactions WHERE cookie_hash=$1 FOR UPDATE`, ch[:]).Scan(&result.ID, &storedState, &result.Nonce, &result.EncryptedVerifier, &result.Issuer, &result.ClientID, &result.RedirectURI, &result.ExpiresAt, &consumed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return auth.AuthTransaction{}, auth.ErrNotFound
 	}
@@ -90,6 +91,9 @@ func (r *Repository) ConsumeAuthTransaction(ctx context.Context, cookie, state s
 	}
 	if err := tx.Commit(); err != nil {
 		return auth.AuthTransaction{}, err
+	}
+	if !equalBytes(storedState, sh[:]) {
+		return auth.AuthTransaction{}, auth.ErrForbidden
 	}
 	if !result.ExpiresAt.After(now) {
 		return auth.AuthTransaction{}, auth.ErrExpired
@@ -167,6 +171,12 @@ func (r *Repository) ConsumeOrganizationSelection(ctx context.Context, input aut
 		return auth.Session{}, auth.ErrForbidden
 	}
 	s := input.Session
+	if s.MemberID != input.MemberID {
+		if err := tx.Commit(); err != nil {
+			return auth.Session{}, err
+		}
+		return auth.Session{}, auth.ErrForbidden
+	}
 	cookieHash, csrfHash := sha256.Sum256([]byte(s.Cookie)), sha256.Sum256([]byte(s.CSRFToken))
 	if _, err := tx.ExecContext(ctx, `INSERT INTO app_sessions (id,cookie_hash,member_id,csrf_token_hash,created_at,last_used_at,idle_expires_at,absolute_expires_at) VALUES ($1,$2,$3,$4,$5,$5,$6,$7)`, s.ID, cookieHash[:], s.MemberID, csrfHash[:], s.CreatedAt, s.IdleExpiresAt, s.AbsoluteExpiresAt); err != nil {
 		return auth.Session{}, err

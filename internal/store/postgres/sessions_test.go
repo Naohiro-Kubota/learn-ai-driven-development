@@ -49,6 +49,31 @@ func TestConsumeOrganizationSelectionRejectsCandidateOutsideSnapshot(t *testing.
 	}
 }
 
+func TestConsumeOrganizationSelectionRejectsDifferentIssuedMember(t *testing.T) {
+	db := openWorkflowTestDatabase(t)
+	if _, err := db.Exec(`TRUNCATE organization_selection_transaction_members, organization_selection_transactions, member_oidc_identities, oidc_identities, app_sessions, member_roles, members, organizations RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO organizations (id, name) VALUES ('org-1', 'One'), ('org-2', 'Two'); INSERT INTO members (id, organization_id, oidc_subject) VALUES ('member-1', 'org-1', 'legacy-1'), ('member-2', 'org-2', 'legacy-2'); INSERT INTO oidc_identities (id, issuer, subject) VALUES ('identity-1', 'https://issuer.example', 'subject-1')`); err != nil {
+		t.Fatal(err)
+	}
+	r, now := NewRepository(db), time.Now().UTC()
+	if err := r.CreateOrganizationSelection(context.Background(), auth.OrganizationSelectionInput{ID: "selection-1", Cookie: "selection-cookie", CSRFToken: "selection-csrf", IdentityID: "identity-1", MemberIDs: []string{"member-1"}, ExpiresAt: now.Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := r.ConsumeOrganizationSelection(context.Background(), auth.ConsumeOrganizationSelectionInput{Cookie: "selection-cookie", CSRFToken: "selection-csrf", MemberID: "member-1", Now: now, Session: auth.SessionInput{ID: "session-1", Cookie: "session-cookie", CSRFToken: "session-csrf", MemberID: "member-2", CreatedAt: now, IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(time.Hour)}})
+	if !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("err = %v, want forbidden", err)
+	}
+	var sessions int
+	if err := db.QueryRow(`SELECT count(*) FROM app_sessions`).Scan(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	if sessions != 0 {
+		t.Fatalf("sessions = %d, want 0", sessions)
+	}
+}
+
 func TestSessionAuthenticationHonorsRevocationAndExpiry(t *testing.T) {
 	db := openWorkflowTestDatabase(t)
 	if _, err := db.Exec(`TRUNCATE app_sessions, member_roles, members, organizations RESTART IDENTITY CASCADE`); err != nil {
@@ -91,5 +116,55 @@ func TestConsumeAuthTransactionConsumesReplay(t *testing.T) {
 	_, err = r.ConsumeAuthTransaction(context.Background(), "auth-cookie", "state", now)
 	if !errors.Is(err, auth.ErrConsumed) {
 		t.Fatalf("replay err = %v", err)
+	}
+}
+
+func TestConsumeAuthTransactionConsumesStateMismatch(t *testing.T) {
+	db := openWorkflowTestDatabase(t)
+	if _, err := db.Exec(`TRUNCATE oidc_auth_transactions RESTART IDENTITY`); err != nil {
+		t.Fatal(err)
+	}
+	r, now := NewRepository(db), time.Now().UTC()
+	if err := r.CreateAuthTransaction(context.Background(), auth.AuthTransaction{ID: "auth-record", Cookie: "auth-cookie", State: "correct-state", Nonce: "nonce", EncryptedVerifier: []byte("encrypted"), Issuer: "https://issuer.example", ClientID: "client", RedirectURI: "https://app.example/callback", ExpiresAt: now.Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := r.ConsumeAuthTransaction(context.Background(), "auth-cookie", "incorrect-state", now)
+	if !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("mismatch err = %v, want forbidden", err)
+	}
+	_, err = r.ConsumeAuthTransaction(context.Background(), "auth-cookie", "correct-state", now)
+	if !errors.Is(err, auth.ErrConsumed) {
+		t.Fatalf("replay err = %v, want consumed", err)
+	}
+}
+
+func TestRepositoryNeverStoresRawBrowserSecretsInIDColumns(t *testing.T) {
+	db := openWorkflowTestDatabase(t)
+	if _, err := db.Exec(`TRUNCATE organization_selection_transaction_members, organization_selection_transactions, oidc_auth_transactions, oidc_identities, app_sessions, member_roles, members, organizations RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO organizations (id, name) VALUES ('org-1', 'One'); INSERT INTO members (id, organization_id, oidc_subject) VALUES ('member-1', 'org-1', 'legacy-1'); INSERT INTO oidc_identities (id, issuer, subject) VALUES ('identity-1', 'https://issuer.example', 'subject-1')`); err != nil {
+		t.Fatal(err)
+	}
+	r, now := NewRepository(db), time.Now().UTC()
+	if err := r.CreateAuthTransaction(context.Background(), auth.AuthTransaction{ID: "auth-record", Cookie: "auth-cookie", State: "auth-state", Nonce: "nonce", EncryptedVerifier: []byte("encrypted"), Issuer: "https://issuer.example", ClientID: "client", RedirectURI: "https://app.example/callback", ExpiresAt: now.Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.CreateOrganizationSelection(context.Background(), auth.OrganizationSelectionInput{ID: "selection-record", Cookie: "selection-cookie", CSRFToken: "selection-csrf", IdentityID: "identity-1", MemberIDs: []string{"member-1"}, ExpiresAt: now.Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.CreateSession(context.Background(), auth.SessionInput{ID: "session-record", Cookie: "session-cookie", CSRFToken: "session-csrf", MemberID: "member-1", CreatedAt: now, IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{`SELECT id FROM oidc_auth_transactions`, `SELECT id FROM organization_selection_transactions`, `SELECT id FROM app_sessions`} {
+		var id string
+		if err := db.QueryRow(query).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		for _, secret := range []string{"auth-cookie", "auth-state", "selection-cookie", "selection-csrf", "session-cookie", "session-csrf"} {
+			if id == secret {
+				t.Fatalf("id %q stores raw secret", id)
+			}
+		}
 	}
 }

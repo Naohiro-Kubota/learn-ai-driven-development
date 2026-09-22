@@ -59,13 +59,17 @@ func (a *Authenticator) BeginLogin(ctx context.Context) (LoginStart, error) {
 	if err != nil {
 		return LoginStart{}, err
 	}
+	recordID, err := oidcOpaque()
+	if err != nil {
+		return LoginStart{}, err
+	}
 	verifier := oauth2.GenerateVerifier()
 	encrypted, err := EncryptVerifier(a.config.AuthTransactionKey, []byte(verifier))
 	if err != nil {
 		return LoginStart{}, err
 	}
 	now := a.currentTime()
-	transaction := AuthTransaction{ID: state, Cookie: cookie, State: state, Nonce: nonce, EncryptedVerifier: encrypted, Issuer: a.config.OIDCIssuer, ClientID: a.config.OIDCClientID, RedirectURI: a.config.OIDCRedirectURI, ExpiresAt: now.Add(a.config.AuthTransactionTTL)}
+	transaction := AuthTransaction{ID: recordID, Cookie: cookie, State: state, Nonce: nonce, EncryptedVerifier: encrypted, Issuer: a.config.OIDCIssuer, ClientID: a.config.OIDCClientID, RedirectURI: a.config.OIDCRedirectURI, ExpiresAt: now.Add(a.config.AuthTransactionTTL)}
 	if err := a.transactions.CreateAuthTransaction(ctx, transaction); err != nil {
 		return LoginStart{}, err
 	}
@@ -88,12 +92,12 @@ func (a *Authenticator) CompleteLogin(ctx context.Context, input CallbackInput) 
 	if a.transactions == nil || a.verifier == nil {
 		return LoginResult{}, fmt.Errorf("authenticator is not configured")
 	}
-	if input.Code == "" {
-		return LoginResult{}, fmt.Errorf("authorization code is required")
-	}
 	transaction, err := a.transactions.ConsumeAuthTransaction(ctx, input.TransactionCookie, input.State, a.currentTime())
 	if err != nil {
 		return LoginResult{}, err
+	}
+	if input.Code == "" {
+		return LoginResult{}, fmt.Errorf("authorization code is required")
 	}
 	if transaction.Issuer != a.config.OIDCIssuer || transaction.ClientID != a.config.OIDCClientID || transaction.RedirectURI != a.config.OIDCRedirectURI {
 		return LoginResult{}, fmt.Errorf("auth transaction configuration mismatch")
@@ -137,7 +141,12 @@ func (a *Authenticator) CompleteLogin(ctx context.Context, input CallbackInput) 
 		if err != nil {
 			return LoginResult{}, err
 		}
-		session := SessionInput{ID: cookie, Cookie: cookie, CSRFToken: csrf, MemberID: members[0], CreatedAt: a.currentTime(), IdleExpiresAt: a.currentTime().Add(a.config.SessionIdleTTL), AbsoluteExpiresAt: a.currentTime().Add(a.config.SessionAbsoluteTTL)}
+		sessionID, err := oidcOpaque()
+		if err != nil {
+			return LoginResult{}, err
+		}
+		now := a.currentTime()
+		session := SessionInput{ID: sessionID, Cookie: cookie, CSRFToken: csrf, MemberID: members[0], CreatedAt: now, IdleExpiresAt: now.Add(a.config.SessionIdleTTL), AbsoluteExpiresAt: now.Add(a.config.SessionAbsoluteTTL)}
 		if err := a.transactions.CreateSession(ctx, session); err != nil {
 			return LoginResult{}, err
 		}
@@ -155,7 +164,11 @@ func (a *Authenticator) CompleteLogin(ctx context.Context, input CallbackInput) 
 	if err != nil {
 		return LoginResult{}, err
 	}
-	selection := OrganizationSelectionInput{ID: cookie, Cookie: cookie, CSRFToken: csrf, IdentityID: identityID, MemberIDs: members, ExpiresAt: a.currentTime().Add(a.config.AuthTransactionTTL)}
+	selectionID, err := oidcOpaque()
+	if err != nil {
+		return LoginResult{}, err
+	}
+	selection := OrganizationSelectionInput{ID: selectionID, Cookie: cookie, CSRFToken: csrf, IdentityID: identityID, MemberIDs: members, ExpiresAt: a.currentTime().Add(a.config.AuthTransactionTTL)}
 	if err := a.transactions.CreateOrganizationSelection(ctx, selection); err != nil {
 		return LoginResult{}, err
 	}
