@@ -118,6 +118,104 @@ func TestOrganizationSelectionCompletionCreatesSession(t *testing.T) {
 	}
 }
 
+func TestOrganizationSelectionReadRejectsMissingExpiredAndConsumed(t *testing.T) {
+	now := time.Date(2026, time.September, 22, 9, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name    string
+		seed    func(*testing.T, *Repository, time.Time)
+		wantErr error
+	}{
+		{name: "missing", wantErr: auth.ErrNotFound},
+		{
+			name: "expired",
+			seed: func(t *testing.T, r *Repository, now time.Time) {
+				seedSelection(t, r, "selection-cookie", "selection-csrf", now.Add(-time.Second))
+			},
+			wantErr: auth.ErrExpired,
+		},
+		{
+			name: "consumed",
+			seed: func(t *testing.T, r *Repository, now time.Time) {
+				seedSelection(t, r, "selection-cookie", "selection-csrf", now.Add(time.Hour))
+				if _, err := r.db.Exec(`UPDATE organization_selection_transactions SET consumed_at = $1 WHERE id = 'selection-1'`, now); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantErr: auth.ErrConsumed,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openWorkflowTestDatabase(t)
+			seedSelectionDatabase(t, db)
+			r := NewRepository(db)
+			if tc.seed != nil {
+				tc.seed(t, r, now)
+			}
+			_, err := r.ReadAndIssueCSRFToken(context.Background(), "selection-cookie", now)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestOrganizationSelectionCompletionConsumesIncorrectCSRFWithoutSession(t *testing.T) {
+	db := openWorkflowTestDatabase(t)
+	seedSelectionDatabase(t, db)
+	now := time.Date(2026, time.September, 22, 9, 0, 0, 0, time.UTC)
+	r := NewRepository(db)
+	seedSelection(t, r, "selection-cookie", "correct-csrf", now.Add(time.Hour))
+	session := auth.SessionInput{ID: "session-1", Cookie: "session-cookie", CSRFToken: "session-csrf", MemberID: "member-1", CreatedAt: now, IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(2 * time.Hour)}
+
+	err := r.CompleteOrganizationSelection(context.Background(), auth.CompleteOrganizationSelectionInput{Cookie: "selection-cookie", CSRFToken: "incorrect-csrf", MemberID: "member-1", Now: now}, session)
+	if !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("err = %v, want forbidden", err)
+	}
+	assertSelectionConsumed(t, db, "selection-1")
+	assertAppSessionCount(t, db, 0)
+	err = r.CompleteOrganizationSelection(context.Background(), auth.CompleteOrganizationSelectionInput{Cookie: "selection-cookie", CSRFToken: "correct-csrf", MemberID: "member-1", Now: now}, session)
+	if !errors.Is(err, auth.ErrConsumed) {
+		t.Fatalf("replay err = %v, want consumed", err)
+	}
+	assertAppSessionCount(t, db, 0)
+}
+
+func seedSelectionDatabase(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(`TRUNCATE organization_selection_transaction_members, organization_selection_transactions, member_oidc_identities, oidc_identities, app_sessions, member_roles, members, organizations RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO organizations (id, name) VALUES ('org-1', 'One'); INSERT INTO members (id, organization_id, oidc_subject) VALUES ('member-1', 'org-1', 'subject-1'); INSERT INTO oidc_identities (id, issuer, subject) VALUES ('identity-1', 'https://issuer.example', 'subject'); INSERT INTO member_oidc_identities (identity_id, member_id) VALUES ('identity-1', 'member-1')`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func seedSelection(t *testing.T, r *Repository, cookie, csrfToken string, expiresAt time.Time) {
+	t.Helper()
+	if err := r.CreateOrganizationSelection(context.Background(), auth.OrganizationSelectionInput{ID: "selection-1", Cookie: cookie, CSRFToken: csrfToken, IdentityID: "identity-1", MemberIDs: []string{"member-1"}, ExpiresAt: expiresAt}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertSelectionConsumed(t *testing.T, db *sql.DB, selectionID string) {
+	t.Helper()
+	var consumedAt time.Time
+	if err := db.QueryRow(`SELECT consumed_at FROM organization_selection_transactions WHERE id = $1`, selectionID).Scan(&consumedAt); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertAppSessionCount(t *testing.T, db *sql.DB, want int) {
+	t.Helper()
+	var got int
+	if err := db.QueryRow(`SELECT count(*) FROM app_sessions`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("app sessions = %d, want %d", got, want)
+	}
+}
+
 func assertSessionCSRFHash(t *testing.T, db interface{ QueryRow(string, ...any) *sql.Row }, sessionID string, want [sha256.Size]byte) {
 	t.Helper()
 	var got []byte
