@@ -4,18 +4,27 @@
 # Network access is deliberately restricted to package registries and GitHub.
 
 # Commands allowed by the workspace sandbox, including the permitted network
-# destinations below, run without approval. Operations that need to write
-# protected paths such as .git remain approval-gated.
+# destinations below, run without approval. The custom profile grants the
+# minimum additional permission needed to create and update feature branches.
 approval_policy = "never"
-sandbox_mode = "workspace-write"
+default_permissions = "project-git-write"
 
-[sandbox_workspace_write]
-network_access = true
+[features]
+network_proxy = true
 
-[features.network_proxy]
+[permissions.project-git-write]
+description = "Edit the project and Git metadata while preserving protected paths."
+extends = ":workspace"
+
+[permissions.project-git-write.filesystem.":workspace_roots"]
+".git" = "write"
+".codex" = "read"
+".agents" = "read"
+
+[permissions.project-git-write.network]
 enabled = true
 
-[features.network_proxy.domains]
+[permissions.project-git-write.network.domains]
 "api.github.com" = "allow"
 "codeload.github.com" = "allow"
 "github.com" = "allow"
