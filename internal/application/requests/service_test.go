@@ -10,9 +10,11 @@ import (
 )
 
 func requester(id string) Actor {
-	return Actor{MemberID: id, Roles: []domain.Role{domain.RoleRequester}}
+	return Actor{MemberID: id, OrganizationID: "organization", Roles: []domain.Role{domain.RoleRequester}}
 }
-func approver(id string) Actor { return Actor{MemberID: id, Roles: []domain.Role{domain.RoleApprover}} }
+func approver(id string) Actor {
+	return Actor{MemberID: id, OrganizationID: "organization", Roles: []domain.Role{domain.RoleApprover}}
+}
 
 func TestCreateDraftNormalizesTitleAndAllowsEmptyDescription(t *testing.T) {
 	repo := newFakeRepository()
@@ -243,6 +245,28 @@ func TestGetApprovalUsesRequestVisibility(t *testing.T) {
 			}
 			if err != nil || approval == nil || approval.ID != testCase.wantID || approval.Status != domain.ApprovalStatusPending {
 				t.Fatalf("GetApproval() = %#v, error = %v", approval, err)
+			}
+		})
+	}
+}
+
+func TestAdminCannotReadAnotherOrganizationRequestApprovalOrAudit(t *testing.T) {
+	repo := newFakeRepository(pendingRequest())
+	service := NewService(repo)
+	actor := Actor{MemberID: "admin", OrganizationID: "other-organization", Roles: []domain.Role{domain.RoleAdmin}}
+	for _, name := range []string{"Get", "GetApproval", "ListAuditEvents"} {
+		t.Run(name, func(t *testing.T) {
+			var err error
+			switch name {
+			case "Get":
+				_, err = service.Get(context.Background(), actor, "request-1")
+			case "GetApproval":
+				_, err = service.GetApproval(context.Background(), actor, "request-1")
+			case "ListAuditEvents":
+				_, err = service.ListAuditEvents(context.Background(), actor, "request-1")
+			}
+			if !errors.Is(err, domain.ErrNotFound) {
+				t.Fatalf("%s() error = %v, want ErrNotFound", name, err)
 			}
 		})
 	}
