@@ -38,6 +38,7 @@ type Request struct {
 }
 
 type Approval struct {
+	ID               string
 	RequestID        string
 	AssigneeMemberID string
 	Status           ApprovalStatus
@@ -52,9 +53,16 @@ type DefaultApprover struct {
 type ContentSnapshot struct{ Title, Description string }
 
 type AuditEvent struct {
-	RequestID       string
-	ActorMemberID   string
-	Type            string
-	OccurredAt      time.Time
-	ContentSnapshot ContentSnapshot
+	ID               string
+	RequestID        string
+	ActorMemberID    string
+	Type             string
+	OccurredAt       time.Time
+	ContentSnapshot  *ContentSnapshot
+	ApprovalMetadata *ApprovalMetadata
+}
+
+type ApprovalMetadata struct {
+	AssigneeMemberID string
+	ApprovalID       string
 }

@@ -40,8 +40,57 @@ func TestCreateAndUpdateDraftPersistAuditHistory(t *testing.T) {
 	for _, event := range events {
 		eventsByType[event.Type] = event
 	}
-	if len(events) != 2 || eventsByType["request_created"].ContentSnapshot.Title != "Travel request" || eventsByType["request_updated"].ContentSnapshot.Title != "Updated travel request" {
+	if len(events) != 2 || eventsByType["request_created"].ContentSnapshot == nil || eventsByType["request_updated"].ContentSnapshot == nil || eventsByType["request_created"].ContentSnapshot.Title != "Travel request" || eventsByType["request_updated"].ContentSnapshot.Title != "Updated travel request" {
 		t.Fatalf("ListAuditEvents() = %#v", events)
+	}
+}
+
+func TestApprovalAndAuditReadModelPreservesOpaqueIDsAndMetadata(t *testing.T) {
+	db := openWorkflowTestDatabase(t)
+	seed := seedWorkflow(t, db)
+	repository := NewRepository(db)
+	ctx := context.Background()
+	created, err := repository.CreateDraft(ctx, createDraftCommand(newDraft(seed), seed.requesterID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := repository.Submit(ctx, submitCommand(created, seed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	approval, err := repository.GetApproval(ctx, pending.ID)
+	if err != nil || approval == nil || approval.ID == "" {
+		t.Fatalf("GetApproval() = %#v, error = %v", approval, err)
+	}
+	if _, err := repository.Approve(ctx, approveCommand(pending, seed)); err != nil {
+		t.Fatal(err)
+	}
+	events, err := repository.ListAuditEvents(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListAuditEvents() count = %d, want 3", len(events))
+	}
+	for i, event := range events {
+		if event.ID == "" || event.ContentSnapshot == nil {
+			t.Fatalf("event[%d] = %#v, want opaque ID and snapshot", i, event)
+		}
+		if i > 0 && (events[i-1].OccurredAt.After(event.OccurredAt) || (events[i-1].OccurredAt.Equal(event.OccurredAt) && events[i-1].ID >= event.ID)) {
+			t.Fatalf("events are not ordered by (occurred_at,id): %#v", events)
+		}
+		if event.ContentSnapshot.Description != "" {
+			t.Fatalf("event[%d] description = %q, want empty snapshot", i, event.ContentSnapshot.Description)
+		}
+	}
+	if events[0].ApprovalMetadata != nil {
+		t.Fatalf("create metadata = %#v, want nil", events[0].ApprovalMetadata)
+	}
+	if events[1].ApprovalMetadata == nil || events[1].ApprovalMetadata.ApprovalID != approval.ID || events[1].ApprovalMetadata.AssigneeMemberID != seed.approverID {
+		t.Fatalf("submit metadata = %#v", events[1].ApprovalMetadata)
+	}
+	if events[2].ApprovalMetadata == nil || events[2].ApprovalMetadata.ApprovalID != approval.ID || events[2].ApprovalMetadata.AssigneeMemberID != seed.approverID {
+		t.Fatalf("approve metadata = %#v", events[2].ApprovalMetadata)
 	}
 }
 

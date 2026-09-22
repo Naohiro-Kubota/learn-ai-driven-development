@@ -47,8 +47,9 @@ type Session struct {
 }
 
 type Principal struct {
-	MemberID string
-	Roles    []domain.Role
+	MemberID       string
+	OrganizationID string
+	Roles          []domain.Role
 }
 
 type AuthenticatedSession struct {

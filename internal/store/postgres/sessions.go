@@ -122,7 +122,7 @@ func (r *Repository) AuthenticateSession(ctx context.Context, cookie string, now
 func (r *Repository) Authenticate(ctx context.Context, cookie string, now time.Time) (auth.AuthenticatedSession, error) {
 	hash := sha256.Sum256([]byte(cookie))
 	var session auth.AuthenticatedSession
-	err := r.db.QueryRowContext(ctx, `SELECT id, member_id, csrf_token_hash FROM app_sessions WHERE cookie_hash = $1 AND revoked_at IS NULL AND idle_expires_at > $2 AND absolute_expires_at > $2`, hash[:], now).Scan(&session.ID, &session.Principal.MemberID, &session.CSRFTokenHash)
+	err := r.db.QueryRowContext(ctx, `SELECT s.id, s.member_id, m.organization_id, s.csrf_token_hash FROM app_sessions s JOIN members m ON m.id = s.member_id WHERE s.cookie_hash = $1 AND s.revoked_at IS NULL AND s.idle_expires_at > $2 AND s.absolute_expires_at > $2`, hash[:], now).Scan(&session.ID, &session.Principal.MemberID, &session.Principal.OrganizationID, &session.CSRFTokenHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return auth.AuthenticatedSession{}, auth.ErrNotFound
 	}
