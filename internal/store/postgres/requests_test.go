@@ -83,14 +83,21 @@ func TestApprovalAndAuditReadModelPreservesOpaqueIDsAndMetadata(t *testing.T) {
 			t.Fatalf("event[%d] description = %q, want empty snapshot", i, event.ContentSnapshot.Description)
 		}
 	}
-	if events[0].ApprovalMetadata != nil {
-		t.Fatalf("create metadata = %#v, want nil", events[0].ApprovalMetadata)
+	eventsByType := make(map[string]domain.AuditEvent, len(events))
+	for _, event := range events {
+		if _, exists := eventsByType[event.Type]; exists {
+			t.Fatalf("duplicate audit event type %q", event.Type)
+		}
+		eventsByType[event.Type] = event
 	}
-	if events[1].ApprovalMetadata == nil || events[1].ApprovalMetadata.ApprovalID != approval.ID || events[1].ApprovalMetadata.AssigneeMemberID != seed.approverID {
-		t.Fatalf("submit metadata = %#v", events[1].ApprovalMetadata)
+	if event := eventsByType["request_created"]; event.ApprovalMetadata != nil {
+		t.Fatalf("create metadata = %#v, want nil", event.ApprovalMetadata)
 	}
-	if events[2].ApprovalMetadata == nil || events[2].ApprovalMetadata.ApprovalID != approval.ID || events[2].ApprovalMetadata.AssigneeMemberID != seed.approverID {
-		t.Fatalf("approve metadata = %#v", events[2].ApprovalMetadata)
+	for _, eventType := range []string{"request_submitted", "request_approved"} {
+		event, exists := eventsByType[eventType]
+		if !exists || event.ApprovalMetadata == nil || event.ApprovalMetadata.ApprovalID != approval.ID || event.ApprovalMetadata.AssigneeMemberID != seed.approverID {
+			t.Fatalf("%s metadata = %#v", eventType, event.ApprovalMetadata)
+		}
 	}
 }
 
