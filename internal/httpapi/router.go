@@ -19,6 +19,7 @@ type Dependencies struct {
 	Config         config.Config
 	Authenticator  Authenticator
 	SelectionStore auth.SelectionStore
+	SessionStore   auth.SessionStore
 	Now            func() time.Time
 }
 
@@ -34,6 +35,8 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	mux.HandleFunc("GET /auth/oidc/callback", r.callback)
 	mux.HandleFunc("GET /auth/oidc/organization-selection", r.getOrganizationSelection)
 	mux.HandleFunc("POST /auth/oidc/organization-selection", r.selectOrganization)
+	mux.Handle("GET /api/v1/session", r.RequireSession(http.HandlerFunc(r.getSession)))
+	mux.Handle("POST /api/v1/session/logout", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.logout))))
 	return mux
 }
 
