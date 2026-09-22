@@ -12,6 +12,10 @@ default_permissions = "project-git-write"
 [features]
 network_proxy = true
 
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 3
+
 [permissions.project-git-write]
 description = "Edit the project and Git metadata while preserving protected paths."
 extends = ":workspace"
