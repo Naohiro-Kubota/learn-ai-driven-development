@@ -90,7 +90,15 @@ func TestApprovalAndAuditReadModelPreservesOpaqueIDsAndMetadata(t *testing.T) {
 		}
 		eventsByType[event.Type] = event
 	}
-	if event := eventsByType["request_created"]; event.ApprovalMetadata != nil {
+	expectedEventTypes := []string{"request_created", "request_submitted", "request_approved"}
+	if len(eventsByType) != len(expectedEventTypes) {
+		t.Fatalf("audit event types = %#v, want exactly %#v", eventsByType, expectedEventTypes)
+	}
+	createdEvent, exists := eventsByType["request_created"]
+	if !exists {
+		t.Fatalf("missing request_created audit event: %#v", eventsByType)
+	}
+	if event := createdEvent; event.ApprovalMetadata != nil {
 		t.Fatalf("create metadata = %#v, want nil", event.ApprovalMetadata)
 	}
 	for _, eventType := range []string{"request_submitted", "request_approved"} {
