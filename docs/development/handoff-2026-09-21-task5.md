@@ -27,7 +27,7 @@ Task 5 を開始する前に、PR #4 が `develop` にマージ済みである�
 | Task 2 | 完了・承認済み | PostgreSQL schema、Compose、migration test | `e2bd22b` |
 | Task 3 | 完了・承認済み | domain workflow と application service | `6a45c1c` |
 | Task 4 | 完了・承認済み | workflow repository、schema補完、並行性 test | `0f60f5a`、`bf7bf38` |
-| Task 5 | 未着手 | OIDC transaction と opaque session | — |
+| Task 5 | 完了・承認済み | OIDC identityとMember対応表、単回使用transaction、opaque session、Organization選択候補snapshot | [PR #7](https://github.com/Naohiro-Kubota/learn-ai-driven-development/pull/7)、`5d20868` |
 
 ## 承認済みの主要 Decision
 
@@ -127,8 +127,8 @@ git diff --check
 
 Task 5 の完了前に、`.superpowers/sdd/2026-09-20-go-api-implementation/progress.md` へ日本語で判断と実行記録を追記する。このdirectoryはgit管理対象外である。
 
-## 未解決リスク・次の Decision
+## 後続Taskの前提・次のDecision
 
-- 実装開始時に、既存`members` schemaが検証済みOIDC `iss`/`sub`を一意に対応付ける要件を満たすかを確認する。曖昧または不可能なら、migrationを追加せず矛盾を報告する。
+- loginを有効化する前に、検証済みissuerを指定したprovisioningで`oidc_identities`と`member_oidc_identities`を作成する。管理用provisioning workflowは後続Taskで扱う。
 - `pnpm test` は既存のNode標準`node:test`とVitestの収集競合により失敗する。Task 5のscopeへ暗黙に含めず、必要なら別Taskとして修正する。
 - CSRF/origin middlewareとHTTP cookie発行はTask 6の範囲である。Task 5はcookie属性・token lifecycleを値オブジェクト／repository境界で検証するが、HTTP handlerを先取りしない。
