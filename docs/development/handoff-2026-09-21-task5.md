@@ -131,4 +131,4 @@ Task 5 の完了前に、`.superpowers/sdd/2026-09-20-go-api-implementation/prog
 
 - loginを有効化する前に、検証済みissuerを指定したprovisioningで`oidc_identities`と`member_oidc_identities`を作成する。管理用provisioning workflowは後続Taskで扱う。
 - `pnpm test` のNode標準`node:test`とVitestの収集競合は解消済みである。`scripts/check-gofmt.test.mjs`はVitestへ移行済みであり、2026-09-22に`pnpm test`が1 file・2 testsの成功を確認した。
-- CSRF/origin middlewareとHTTP cookie発行はTask 6の範囲である。Task 5はcookie属性・token lifecycleを値オブジェクト／repository境界で検証するが、HTTP handlerを先取りしない。
+- Task 6では、`GET /auth/oidc/login`、`GET /auth/oidc/callback`、Organization選択のGET/POST、`GET /api/v1/session`、`POST /api/v1/session/logout`を実装し、HTTP cookie発行、server-side session由来のActor、Origin/CSRF防御、および設定済みPostgreSQL/OIDCへのcomposition rootを追加した。`cmd/api`と`internal/httpapi`のテスト、および`go vet`、`gofmt`、Biome、`git diff --check`は成功した。Task 6を検証完了とするには、Dockerとloopback listenerを利用できる環境で`pnpm run test:db`、`go test ./cmd/api ./internal/auth ./internal/httpapi -count=1`、隔離した`TEST_DATABASE_URL`を指定した`go test ./internal/store/postgres -count=1`がすべて成功する必要がある。この実行環境ではDocker socketへのアクセスと`httptest.Server`のloopback bindが拒否されたため、これらの完了ゲートは未達であり、テストの代替・弱体化は行っていない。
