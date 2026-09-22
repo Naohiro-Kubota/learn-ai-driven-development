@@ -53,6 +53,32 @@ class ProtectBranchesTest(unittest.TestCase):
     def test_allows_git_update_ref_on_feature_branch(self) -> None:
         self.assertIsNone(invoke("git update-ref HEAD deadbeef", "feature/example"))
 
+    def test_allows_creating_feature_branch_from_develop(self) -> None:
+        self.assertIsNone(invoke("git switch -c feature/example develop", "develop"))
+
+    def test_allows_checkout_branch_from_develop(self) -> None:
+        self.assertIsNone(invoke("git checkout -b feature/example develop", "develop"))
+
+    def test_allows_creating_worktree_branch_from_develop(self) -> None:
+        self.assertIsNone(
+            invoke(
+                "git worktree add -b feature/example /tmp/example develop",
+                "develop",
+            )
+        )
+
+    def test_allows_read_only_git_commands_on_protected_branch(self) -> None:
+        self.assertIsNone(invoke("git diff --check", "develop"))
+
+    def test_denies_compound_command_after_branch_creation(self) -> None:
+        result = invoke(
+            "git switch -c feature/example develop && git commit --allow-empty -m test",
+            "develop",
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
+
     def test_denies_explicit_protected_branch_reference(self) -> None:
         result = invoke("git push origin HEAD:develop", "feature/example")
 

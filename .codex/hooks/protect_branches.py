@@ -19,6 +19,21 @@ PROTECTED_BRANCHES = {"main", "develop"}
 BRANCH_REFERENCE = re.compile(
     r"(?<![A-Za-z0-9_.-])(?:refs/heads/|(?:origin|upstream)/)?(?:main|develop)(?![A-Za-z0-9_.-])"
 )
+BRANCH_CREATION_FROM_PROTECTED = re.compile(
+    r"^\s*git\s+(?:"
+    r"switch\s+(?:-c|--create)\s+\S+\s+"
+    r"|checkout\s+-b\s+\S+\s+"
+    r"|worktree\s+add\s+-b\s+\S+\s+\S+\s+"
+    r")"
+    r"(?:refs/heads/|(?:origin|upstream)/)?(?:main|develop)\s*$"
+)
+READ_ONLY_GIT_COMMAND = re.compile(
+    r"^\s*git\s+(?:"
+    r"status(?:\s+--short)?|diff(?:\s+--check)?|log|show|"
+    r"rev-parse(?:\s+--show-toplevel)?|remote\s+-v|"
+    r"branch(?:\s+--(?:show-current|list|-all|-remotes|-verbose))?"
+    r")\s*$"
+)
 GIT_COMMAND = re.compile(r"\bgit\b")
 GH_PULL_REQUEST_MERGE = re.compile(
     r"\bgh\s+pr\s+merge\b|\bgh\s+api\b[^\n]*/pulls/[^/\s]+/merge(?:[/?\s]|$)"
@@ -64,7 +79,15 @@ def main() -> int:
         deny("保護ブランチの判定に必要なコマンド入力を解析できませんでした。")
         return 0
 
-    if BRANCH_REFERENCE.search(command) and GIT_COMMAND.search(command):
+    branch_creation = BRANCH_CREATION_FROM_PROTECTED.fullmatch(command)
+    read_only = READ_ONLY_GIT_COMMAND.fullmatch(command)
+    safe_on_protected_branch = branch_creation or read_only
+
+    if (
+        BRANCH_REFERENCE.search(command)
+        and GIT_COMMAND.search(command)
+        and not safe_on_protected_branch
+    ):
         deny("main と develop は保護ブランチです。Codex からは操作できません。")
         return 0
 
@@ -73,7 +96,7 @@ def main() -> int:
         return 0
 
     cwd = event.get("cwd")
-    if isinstance(cwd, str) and GIT_COMMAND.search(command):
+    if isinstance(cwd, str) and GIT_COMMAND.search(command) and not safe_on_protected_branch:
         branch = current_branch(cwd)
         if branch in PROTECTED_BRANCHES:
             deny(f"{branch} は保護ブランチです。Codex から変更できません。")
