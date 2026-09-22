@@ -1,6 +1,6 @@
 # ADR-014: Codexによる作業ブランチのGit参照書込み
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-22
 - Owners: Human project owner
 - Related requirements: NFR-001, NFR-002, NFR-004, NFR-006
@@ -65,11 +65,11 @@ sandboxとapprovalを全面的に迂回する。
 
 ## Decision
 
-**Option Bを採用することを提案する。**
+**Option Bを採用する。**
 
 承認後、`.codex/config.toml`をcustom permission profileへ移行し、`.git`に限ったwrite ruleを追加する。`main`および`develop`に対するPreToolUse hookの拒否規則は維持し、GitHub上のbranch protectionとPull Request reviewをauthoritative controlとして扱う。`danger-full-access`は採用しない。
 
-このADRがAcceptedになるまで、`.codex/config.toml`の権限設定は変更しない。
+`.codex/config.toml`は、このDecisionに従って`project-git-write` profileを既定として設定する。
 
 ## Rationale
 
