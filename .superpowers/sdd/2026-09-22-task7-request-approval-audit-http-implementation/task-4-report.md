@@ -33,4 +33,4 @@ Task 4 の完了条件は未達。database-backed の対象パッケージ実行
 
 ## Commit
 
-この報告書を追加するコミット: `COMMIT_SHA（コミット後に置換）`
+この報告書を最初に追加したコミット: `8526727fcff295bde4cbf69cdf8fcd7af5f148d0`。この行を含む最終コミット SHA は完了報告で示す。
