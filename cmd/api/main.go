@@ -96,9 +96,7 @@ func run(ctx context.Context, lookup func(string) string) (runErr error) {
 
 func newHandler(ctx context.Context, cfg config.Config, db *sql.DB) (http.Handler, error) {
 	repository := postgres.NewRepository(db)
-	// Request routes are outside Task 6, but the executable owns the single
-	// application service that will serve them alongside the auth routes.
-	_ = requests.NewService(repository)
+	requestService := requests.NewService(repository)
 	authenticator, err := newOIDCAuthenticator(ctx, cfg, repository, time.Now)
 	if err != nil {
 		return nil, fmt.Errorf("initialize OIDC authenticator: %w", err)
@@ -109,6 +107,7 @@ func newHandler(ctx context.Context, cfg config.Config, db *sql.DB) (http.Handle
 		Authenticator:  authenticator,
 		SelectionStore: selectionStore,
 		SessionStore:   repository,
+		RequestService: requestService,
 		Now:            time.Now,
 	}), nil
 }
