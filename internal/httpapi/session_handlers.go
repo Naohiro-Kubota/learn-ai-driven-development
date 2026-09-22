@@ -41,7 +41,7 @@ func (r *router) RequireSession(next http.Handler) http.Handler {
 		}
 		value := authenticatedRequest{
 			session: session,
-			actor:   requests.Actor{MemberID: session.Principal.MemberID, Roles: session.Principal.Roles},
+			actor:   requests.Actor{MemberID: session.Principal.MemberID, OrganizationID: session.Principal.OrganizationID, Roles: session.Principal.Roles},
 			cookie:  cookie.Value,
 		}
 		next.ServeHTTP(w, request.WithContext(context.WithValue(request.Context(), sessionContextKey{}, value)))

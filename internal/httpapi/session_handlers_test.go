@@ -102,7 +102,7 @@ func TestRequireCSRFRejectsTokenRotatedAfterAuthentication(t *testing.T) {
 
 func authenticatedSession(token string) auth.AuthenticatedSession {
 	hash := sha256.Sum256([]byte(token))
-	return auth.AuthenticatedSession{ID: "private-session-id", Principal: auth.Principal{MemberID: "selected-member", Roles: []domain.Role{domain.RoleRequester}}, CSRFTokenHash: hash[:]}
+	return auth.AuthenticatedSession{ID: "private-session-id", Principal: auth.Principal{MemberID: "selected-member", OrganizationID: "server-org", Roles: []domain.Role{domain.RoleRequester}}, CSRFTokenHash: hash[:]}
 }
 
 func sessionRequest(method, path string, secure bool) *http.Request {
@@ -174,7 +174,7 @@ func TestRequireSessionUsesOnlyServerActorAndPropagatesContext(t *testing.T) {
 			rr := httptest.NewRecorder()
 			h := (&router{dependencies: d}).RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				actor, ok := ActorFromContext(r.Context())
-				if !ok || !reflect.DeepEqual(actor, requests.Actor{MemberID: "selected-member", Roles: []domain.Role{domain.RoleRequester}}) {
+				if !ok || !reflect.DeepEqual(actor, requests.Actor{MemberID: "selected-member", OrganizationID: "server-org", Roles: []domain.Role{domain.RoleRequester}}) {
 					t.Fatalf("actor = %+v, present = %v", actor, ok)
 				}
 				w.WriteHeader(http.StatusNoContent)

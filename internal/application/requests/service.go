@@ -119,6 +119,9 @@ func (s *Service) Get(ctx context.Context, actor Actor, requestID string) (domai
 	if err != nil {
 		return domain.Request{}, err
 	}
+	if actor.OrganizationID == "" || actor.OrganizationID != request.OrganizationID {
+		return domain.Request{}, domain.ErrNotFound
+	}
 	if request.RequesterMemberID == actor.MemberID || actor.hasRole(domain.RoleAdmin) {
 		return request, nil
 	}
