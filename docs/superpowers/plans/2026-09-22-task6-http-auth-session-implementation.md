@@ -94,7 +94,7 @@ type CompleteOrganizationSelectionInput struct {
 }
 ```
 
-- [ ] **Step 1: Write failing unit and PostgreSQL integration tests**
+- [x] **Step 1: Write failing unit and PostgreSQL integration tests**
 
 Add a unit test proving raw CSRF tokens are freshly generated and not retained in a value returned from an earlier call. Add PostgreSQL tests that seed a session with requester and approver roles, authenticate it as a `Principal`, verify no roles come from caller input, and assert that only the SHA-256 hash of an issued CSRF token is stored. Seed two Organizations for one identity and verify `ReadAndIssueCSRFToken` returns the snapshot `{memberId, organizationId, organizationName}` candidates and a raw token, while the database retains only its hash.
 
@@ -109,7 +109,7 @@ func TestIssueCSRFTokenReplacesStoredHash(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests to verify they fail**
+- [x] **Step 2: Run the focused tests to verify they fail**
 
 Run:
 
@@ -120,13 +120,13 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/s
 
 Expected: FAIL because `Principal`, token-issue methods, and selection-candidate retrieval do not yet exist.
 
-- [ ] **Step 3: Implement the minimal boundary and SQL**
+- [x] **Step 3: Implement the minimal boundary and SQL**
 
 Generate every newly issued CSRF token with the existing CSPRNG helper, hash it with SHA-256, and atomically replace the matching active record's `csrf_token_hash`. `Authenticate` must look up an unrevoked, unexpired session by cookie hash once, then query only `member_roles` for that selected Member and return a private session ID plus the stored hash—never a raw cookie or token. `ReadAndIssueCSRFToken` must reject missing, expired, or consumed transactions; query candidates through `organization_selection_transaction_members → members → organizations`; rotate the selection CSRF hash; and return only the three contract fields plus the new raw token.
 
 `Complete` must generate the application-session cookie, CSRF token, and ID inside `internal/auth`, then call one PostgreSQL transaction that consumes the selection record before checking token hash and candidate membership. Any recognized invalid selection attempt is consumed; no failed path inserts `app_sessions`.
 
-- [ ] **Step 4: Run the focused tests to verify they pass**
+- [x] **Step 4: Run the focused tests to verify they pass**
 
 Run:
 
@@ -137,7 +137,7 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/s
 
 Expected: PASS; the integration tests require an isolated `TEST_DATABASE_URL`.
 
-- [ ] **Step 5: Commit this task**
+- [x] **Step 5: Commit this task**
 
 ```bash
 git add internal/auth/session.go internal/auth/session_test.go internal/store/postgres/sessions.go internal/store/postgres/sessions_test.go
@@ -157,7 +157,7 @@ git commit -m "feat: prepare server-side session boundary for HTTP"
 - Consumes: `auth.Authenticator.BeginLogin(context.Context) (auth.LoginStart, error)`, `auth.Authenticator.CompleteLogin(context.Context, auth.CallbackInput) (auth.LoginResult, error)`, Task 1 `auth.SelectionStore`, and `config.Config`.
 - Produces: `NewRouter(Dependencies) http.Handler`; `GET /auth/oidc/login`, `GET /auth/oidc/callback`, `GET /auth/oidc/organization-selection`, `POST /auth/oidc/organization-selection`; and `WriteError(http.ResponseWriter, APIError)`.
 
-- [ ] **Step 1: Write failing OpenAPI and handler contract tests**
+- [x] **Step 1: Write failing OpenAPI and handler contract tests**
 
 Add OpenAPI assertions for the two new operations, their cookie security schemes, schemas, and the exact `400`/`403` error codes. With fake authenticator and store implementations, test login's authorization redirect and short-lived transaction cookie; a single-member callback's session cookie and fixed UI redirect; a multi-member callback's selection cookie and selection redirect without session cookie; selection GET's candidates plus CSRF token; and selection POST's `302` and application-session cookie.
 
@@ -174,7 +174,7 @@ func TestOrganizationSelectionRejectsCandidateOutsideSnapshot(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests to verify they fail**
+- [x] **Step 2: Run the focused tests to verify they fail**
 
 Run:
 
@@ -184,13 +184,13 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/h
 
 Expected: FAIL because the HTTP package, OpenAPI operations, and handlers do not exist.
 
-- [ ] **Step 3: Implement contract, error mapping, routes, and handlers**
+- [x] **Step 3: Implement contract, error mapping, routes, and handlers**
 
 Extend `api/openapi.yaml` exactly as specified in **Contract to add before implementation**. Register method-aware `ServeMux` routes. Map `auth.ErrNotFound`, `auth.ErrExpired`, and `auth.ErrConsumed` to `400 invalid_auth_transaction`; map `auth.ErrForbidden` to `403 forbidden`; map malformed JSON to `400 invalid_request`; and map unexpected errors to `500 internal_error` without exposing wrapped details.
 
 Set the transaction/selection cookie as `HttpOnly`, `SameSite=Lax`, `Path=/`, and `Secure` when `cfg.CookieSecure` is true. On callback, always clear the transaction cookie after a recognized callback attempt. On selection completion, clear the selection cookie and set a session cookie only after `SelectionStore.Complete` succeeds. Both selection GET and POST use a fixed local UI location; neither reflects a user-supplied redirect destination. Encode JSON with `Content-Type: application/json` and never serialize `LoginResult`, raw OIDC response values, verifier, identity subject, or cookies.
 
-- [ ] **Step 4: Run the focused tests to verify they pass**
+- [x] **Step 4: Run the focused tests to verify they pass**
 
 Run:
 
@@ -200,7 +200,7 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/h
 
 Expected: PASS. Assertions prove invalid/replayed selection cannot issue a session cookie and response/log fixtures contain none of the secret inputs.
 
-- [ ] **Step 5: Commit this task**
+- [x] **Step 5: Commit this task**
 
 ```bash
 git add api/openapi.yaml internal/httpapi/errors.go internal/httpapi/router.go internal/httpapi/auth_handlers.go internal/httpapi/auth_handlers_test.go
@@ -218,7 +218,7 @@ git commit -m "feat: expose OIDC login and organization selection"
 - Consumes: Task 1 `auth.SessionStore`, `requests.Actor`, `config.Config.AllowedOrigin`, `auth.SessionCookie`, and Task 2 `WriteError`.
 - Produces: `GET /api/v1/session`, `POST /api/v1/session/logout`, `ActorFromContext(context.Context) (requests.Actor, bool)`, `RequireSession(http.Handler) http.Handler`, and `RequireCSRF(http.Handler) http.Handler`.
 
-- [ ] **Step 1: Write failing middleware and session-handler tests**
+- [x] **Step 1: Write failing middleware and session-handler tests**
 
 Use store fakes to test that a missing/expired/revoked cookie returns `401 authentication_required`; `GET /api/v1/session` returns exactly the selected Member ID, database roles, and a freshly issued CSRF token; and logout requires a valid session, exact Origin, and current token. Include missing Origin, different scheme/host/port, multiple Origin values, missing token, stale token after rotation, and mismatched token cases. Confirm the revoke operation is not called on any CSRF rejection and a valid logout returns `204` plus an expired session cookie using the configured cookie name.
 
@@ -234,7 +234,7 @@ func TestLogoutRejectsMissingCSRFToken(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests to verify they fail**
+- [x] **Step 2: Run the focused tests to verify they fail**
 
 Run:
 
@@ -244,13 +244,13 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/h
 
 Expected: FAIL because authenticated middleware and session handlers do not exist.
 
-- [ ] **Step 3: Implement session context, Origin/CSRF protection, and handlers**
+- [x] **Step 3: Implement session context, Origin/CSRF protection, and handlers**
 
 `RequireSession` selects the configured session-cookie name, calls `SessionStore.Authenticate` once, and puts `requests.Actor{MemberID, Roles}` plus a package-private authenticated-session value in the request context. Only `ActorFromContext` is exported to application-facing handlers; it never trusts actor information from HTTP input. `RequireCSRF` first requires the exact single `Origin` equal to `cfg.AllowedOrigin`, then compares `sha256.Sum256` of the raw `X-CSRF-Token` with the context-private stored hash using `crypto/subtle.ConstantTimeCompare`; it returns `403 csrf_validation_failed` before invoking its wrapped handler.
 
 The current-session handler calls `IssueCSRFToken` and returns the OpenAPI `Session` JSON DTO. Logout revokes only the authenticated current cookie, writes `204 No Content`, and sends the matching session cookie with `MaxAge: -1` and an expiry in the past. Register the two `/api/v1/session` routes with method-aware patterns and wrap only the unsafe logout route with Origin/CSRF protection.
 
-- [ ] **Step 4: Run the focused tests to verify they pass**
+- [x] **Step 4: Run the focused tests to verify they pass**
 
 Run:
 
@@ -260,7 +260,7 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/h
 
 Expected: PASS; tests prove that only a server-derived Actor reaches the context and that CSRF rejection prevents revocation.
 
-- [ ] **Step 5: Commit this task**
+- [x] **Step 5: Commit this task**
 
 ```bash
 git add internal/httpapi/router.go internal/httpapi/session_handlers.go internal/httpapi/session_handlers_test.go
@@ -277,7 +277,7 @@ git commit -m "feat: protect and expose application sessions"
 - Consumes: `config.Load(os.Getenv)`, `postgres.NewRepository(*sql.DB)`, `auth.NewOIDCAuthenticator`, `requests.NewService`, and `httpapi.NewRouter`.
 - Produces: an API process listening on `config.Config.ListenAddress` and an updated handoff stating that Task 6 is implemented only after the verification below passes.
 
-- [ ] **Step 1: Write a failing composition test or startup seam**
+- [x] **Step 1: Write a failing composition test or startup seam**
 
 Extract a `newHandler(ctx context.Context, cfg config.Config, db *sql.DB) (http.Handler, error)` function in `cmd/api/main.go` and add a focused test that supplies a test database and a fake OIDC-construction seam. It must assert configuration/database/OIDC initialization errors are returned rather than starting a partially configured server.
 
@@ -288,7 +288,7 @@ func TestNewHandlerReturnsOIDCInitializationError(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused test to verify it fails**
+- [x] **Step 2: Run the focused test to verify it fails**
 
 Run:
 
@@ -298,13 +298,13 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./cmd/api -r
 
 Expected: FAIL because `cmd/api` and `newHandler` do not exist.
 
-- [ ] **Step 3: Implement the composition root and synchronize the handoff**
+- [x] **Step 3: Implement the composition root and synchronize the handoff**
 
 Use `database/sql` with the already-selected pgx stdlib driver, call `config.Load(os.Getenv)`, construct one PostgreSQL repository, one request service, one long-lived OIDC authenticator, and one HTTP router. Start `http.Server` at the validated configured address; on `SIGINT`/`SIGTERM`, use a bounded shutdown context and close the database. Do not log configuration secrets, request cookies, CSRF tokens, authorization codes, or ID tokens.
 
 Update the Task 5 handoff only to replace the statement that HTTP cookie issuance/CSRF middleware is pending with the Task 6 route and validation evidence. Retain the identity-provisioning prerequisite and do not add Keycloak credentials to the repository.
 
-- [ ] **Step 4: Run focused and complete verification**
+- [x] **Step 4: Run focused and complete verification**
 
 Run:
 
@@ -324,7 +324,7 @@ git diff --check
 
 Expected: PASS. `pnpm run test:db` and the PostgreSQL package test use an isolated `TEST_DATABASE_URL`; none may target a production database. If the known Node test-runner collection issue recurs, record its exact command/output and resolve it without weakening the suite.
 
-- [ ] **Step 5: Commit this task**
+- [x] **Step 5: Commit this task**
 
 ```bash
 git add cmd/api/main.go docs/development/handoff-2026-09-21-task5.md

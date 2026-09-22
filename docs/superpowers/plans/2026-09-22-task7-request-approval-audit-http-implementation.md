@@ -77,11 +77,11 @@ type AuditEvent struct {
 func (s *Service) GetApproval(context.Context, Actor, string) (*domain.Approval, error)
 ```
 
-- [ ] **Step 1: 失敗するunit／integration testを書く**
+- [x] **Step 1: 失敗するunit／integration testを書く**
 
 session principalが`OrganizationID`を返すことをtestする。`GetApproval`はRequester/assigned Approverにpending Approvalを返し、visible Draftにはnil、別Requesterには`domain.ErrNotFound`を返すことをtestする。PostgreSQLでcreate→submit→approve後にApproval ID、Audit Event ID、Submit/Approve metadata、nil metadata、空Description snapshot、`(occurred_at,id)`順をassertする。
 
-- [ ] **Step 2: focused testが失敗することを確認する**
+- [x] **Step 2: focused testが失敗することを確認する**
 
 ```bash
 GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/auth -run 'Test.*Principal' -count=1
@@ -91,15 +91,15 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/s
 
 期待結果: 組織ID、ID/metadata、`GetApproval`未実装のためFAIL。
 
-- [ ] **Step 3: 最小実装を追加する**
+- [x] **Step 3: 最小実装を追加する**
 
 principal SQLで`members.organization_id`を取得し、roleは引き続き`member_roles`のみから得る。`RequireSession`は組織IDをActorへコピーする。Approval IDをopaqueで保持し、Content Snapshot/approval metadataをpointerでSQL NULLに対応させる。Create/Update/Submit/Approveはnon-nil snapshotを保持する。Submitでは一度だけ生成したApproval IDをapproval insertとaudit metadataへ使用する。Approveではtransaction内で既存Approval IDを読みmetadataへ保存する。`ListAuditEvents`はIDとnullable snapshot/metadataをdecodeし、認可済み`Service.GetApproval`は`Service.Get`のvisibilityを先に適用する。
 
-- [ ] **Step 4: focused testが成功することを確認する**
+- [x] **Step 4: focused testが成功することを確認する**
 
 Step 2の3 commandを再実行する。期待結果: 隔離済みDBでPASS。
 
-- [ ] **Step 5: commitする**
+- [x] **Step 5: commitする**
 
 ```bash
 git add internal/auth internal/domain/request.go internal/application/requests internal/store/postgres
@@ -112,11 +112,11 @@ git commit -m "fix: expose server-derived request read model"
 
 **Interface:** private request bodyは`createRequestInput`、`updateDraftRequestInput`、`expectedVersionInput`のみとする。DTOはRequest/Approval/AuditEventのOpenAPI fieldだけを公開し、`APIError`に任意`FieldErrors []fieldErrorDTO`を追加する。
 
-- [ ] **Step 1: 失敗するDTO/error testを書く**
+- [x] **Step 1: 失敗するDTO/error testを書く**
 
 Draftの`approval:null`、Pending/ApprovedのApproval field、RFC 3339日時、nil sliceから`[]`、Auditのnullability/opaque ID、`WriteError`の`fieldErrors`とsecret-free responseをtestする。
 
-- [ ] **Step 2: focused testが失敗することを確認する**
+- [x] **Step 2: focused testが失敗することを確認する**
 
 ```bash
 GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -run 'Test(RequestDTO|ApprovalDTO|AuditEventDTO|WriteError)' -count=1
@@ -124,15 +124,15 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/h
 
 期待結果: DTO/error field未実装のためFAIL。
 
-- [ ] **Step 3: DTO/error mappingを実装する**
+- [x] **Step 3: DTO/error mappingを実装する**
 
 DTOはprivateにし、`Content-Type: application/json`と`Cache-Control: no-store`で出力する。sliceはempty arrayを返す。`requestAPIError`で`ErrInvalidRequest`→400、`ErrForbidden`→403、`ErrNotFound`→404、`ErrVersionConflict`／`ErrInvalidState`／`ErrApprovalRoutingUnavailable`→各409 codeを一元化する。body fieldを特定できる場合だけ`fieldErrors`を使い、malformed JSON等ではfield名を推測しない。wrapped Go errorは公開しない。
 
-- [ ] **Step 4: focused testが成功することを確認する**
+- [x] **Step 4: focused testが成功することを確認する**
 
 Step 2を再実行する。期待結果: PASS。
 
-- [ ] **Step 5: commitする**
+- [x] **Step 5: commitする**
 
 ```bash
 git add internal/httpapi/response_dto.go internal/httpapi/response_dto_test.go internal/httpapi/errors.go
@@ -145,11 +145,11 @@ git commit -m "feat: map request API responses to OpenAPI"
 
 **Interface:** `httpapi.Dependencies`へ`RequestService` interfaceを追加する。CreateDraft、UpdateDraft、Submit、Approve、Get、GetApproval、ListPending、ListAuditEventsの既存service methodだけを定義し、handlerはrepositoryへ直接アクセスしない。
 
-- [ ] **Step 1: 失敗するHTTP contract testを書く**
+- [x] **Step 1: 失敗するHTTP contract testを書く**
 
 `RequestService` fakeと既存session fakeで、成功Create（201/Location）、Get、PATCH、Submit、Pending、Approve、Auditをtestする。ActorはHTTP headerでinjectせず、context由来の`MemberID`、`Roles`、`OrganizationID`がserviceへ渡ることをassertする。各mutationで401、CSRF/Origin 403かつservice未呼出し、JSON/expectedVersionの400、403/404/409 mappingをtestする。stale Submitが409となりAudit eventを追加しないstateful fake testも追加する。GETはOrigin/CSRFなしで動作することを確認する。
 
-- [ ] **Step 2: focused testが失敗することを確認する**
+- [x] **Step 2: focused testが失敗することを確認する**
 
 ```bash
 GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -run 'Test(Create|GetRequest|Update|Submit|Pending|Approve|Audit)' -count=1
@@ -158,11 +158,11 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./cmd/api -r
 
 期待結果: handler、route、dependency wiring未実装のためFAIL。
 
-- [ ] **Step 3: handler／route／wiringを実装する**
+- [x] **Step 3: handler／route／wiringを実装する**
 
 `json.Decoder.DisallowUnknownFields()`を使うprivate `decodeJSONBody`で、bodyなし、empty body、second document、unknown field、trailing bytesを拒否する。`ExpectedVersion >= 1`をdispatch前に検証する。Actorがcontextになければ401でfail closedする。`request.PathValue("requestId")`と対応service methodだけを使い、errorは`requestAPIError`、responseはTask 2 DTOへ渡す。Create/Update/Submit/Approve成功時には認可済み`GetApproval`でresponseを完成させる。`Location`は返却opaque IDからだけ作る。7 routeを`RequireSession`、mutationには内側`RequireCSRF`で登録し、`cmd/api`で構築済みserviceを一度だけDependencyへ渡す。
 
-- [ ] **Step 4: HTTP testを実行する**
+- [x] **Step 4: HTTP testを実行する**
 
 ```bash
 GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -count=1
@@ -171,7 +171,7 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./cmd/api -c
 
 期待結果: PASS。
 
-- [ ] **Step 5: commitする**
+- [x] **Step 5: commitする**
 
 ```bash
 git add internal/httpapi/request_handlers.go internal/httpapi/request_handlers_test.go internal/httpapi/router.go cmd/api/main.go
@@ -180,7 +180,7 @@ git commit -m "feat: expose request approval API"
 
 ### Task 4: Task 7全体を検証してcompletion evidenceを残す
 
-- [ ] **Step 1: database-backed testを実行する**
+- [x] **Step 1: database-backed testを実行する**
 
 ```bash
 source /Users/nao/.nvm/nvm.sh
@@ -191,7 +191,7 @@ GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/a
 
 期待結果: PASS。test database以外を対象にしない。
 
-- [ ] **Step 2: quality gateを実行する**
+- [x] **Step 2: quality gateを実行する**
 
 ```bash
 pnpm install --frozen-lockfile
@@ -206,11 +206,11 @@ git diff --check
 
 期待結果: PASS。各commandはworking treeを書き換えない。
 
-- [ ] **Step 3: completion evidenceを記録する**
+- [x] **Step 3: completion evidenceを記録する**
 
 全check成功後に`docs/development/task7-completion-2026-09-22.md`を作成する。変更file、ADR-002/003/005/011/013、PDR-001/002、検証command/result、新Decisionなしを記録する。browser E2Eを実施したとは記録しない。
 
-- [ ] **Step 4: evidenceをcommitする**
+- [x] **Step 4: evidenceをcommitする**
 
 ```bash
 git add docs/development/task7-completion-2026-09-22.md
