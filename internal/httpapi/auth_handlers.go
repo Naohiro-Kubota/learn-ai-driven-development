@@ -20,7 +20,7 @@ const (
 func (r *router) login(w http.ResponseWriter, request *http.Request) {
 	result, err := r.dependencies.Authenticator.BeginLogin(request.Context())
 	if err != nil {
-		WriteError(w, APIError{http.StatusInternalServerError, "internal_error"})
+		WriteError(w, APIError{Status: http.StatusInternalServerError, Code: "internal_error"})
 		return
 	}
 	now := r.dependencies.Now()
@@ -33,7 +33,7 @@ func (r *router) login(w http.ResponseWriter, request *http.Request) {
 func (r *router) callback(w http.ResponseWriter, request *http.Request) {
 	cookie := r.readFlowCookie(request, transactionCookieName)
 	if cookie == "" {
-		WriteError(w, APIError{http.StatusBadRequest, "invalid_auth_transaction"})
+		WriteError(w, APIError{Status: http.StatusBadRequest, Code: "invalid_auth_transaction"})
 		return
 	}
 	r.clearFlowCookie(w, transactionCookieName)
@@ -42,7 +42,7 @@ func (r *router) callback(w http.ResponseWriter, request *http.Request) {
 	// Even a provider denial or malformed callback reaches the authenticator with
 	// no exchangeable code so that its recognized transaction is consumed.
 	if err != nil || errors.Is(completeErr, auth.ErrForbidden) {
-		WriteError(w, APIError{http.StatusBadRequest, "invalid_auth_transaction"})
+		WriteError(w, APIError{Status: http.StatusBadRequest, Code: "invalid_auth_transaction"})
 		return
 	}
 	if completeErr != nil {
@@ -59,7 +59,7 @@ func (r *router) callback(w http.ResponseWriter, request *http.Request) {
 		http.SetCookie(w, selection)
 		redirect(w, organizationSelectionLocation)
 	default:
-		WriteError(w, APIError{http.StatusInternalServerError, "internal_error"})
+		WriteError(w, APIError{Status: http.StatusInternalServerError, Code: "internal_error"})
 	}
 }
 
@@ -87,7 +87,7 @@ type organizationSelectionCandidate struct {
 func (r *router) getOrganizationSelection(w http.ResponseWriter, request *http.Request) {
 	cookie := r.readFlowCookie(request, selectionCookieName)
 	if cookie == "" {
-		WriteError(w, APIError{http.StatusBadRequest, "invalid_auth_transaction"})
+		WriteError(w, APIError{Status: http.StatusBadRequest, Code: "invalid_auth_transaction"})
 		return
 	}
 	selection, err := r.dependencies.SelectionStore.ReadAndIssueCSRFToken(request.Context(), cookie, r.dependencies.Now())
@@ -110,17 +110,17 @@ func (r *router) getOrganizationSelection(w http.ResponseWriter, request *http.R
 func (r *router) selectOrganization(w http.ResponseWriter, request *http.Request) {
 	cookie := r.readFlowCookie(request, selectionCookieName)
 	if cookie == "" {
-		WriteError(w, APIError{http.StatusBadRequest, "invalid_auth_transaction"})
+		WriteError(w, APIError{Status: http.StatusBadRequest, Code: "invalid_auth_transaction"})
 		return
 	}
 	if !r.validOrigin(request) {
-		WriteError(w, APIError{http.StatusForbidden, "csrf_validation_failed"})
+		WriteError(w, APIError{Status: http.StatusForbidden, Code: "csrf_validation_failed"})
 		return
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, request.Body, 64<<10))
 	memberID, err := decodeSelectedMemberID(decoder)
 	if err != nil {
-		WriteError(w, APIError{http.StatusBadRequest, "invalid_request"})
+		WriteError(w, APIError{Status: http.StatusBadRequest, Code: "invalid_request"})
 		return
 	}
 	session, err := r.dependencies.SelectionStore.Complete(request.Context(), auth.CompleteOrganizationSelectionInput{Cookie: cookie, CSRFToken: singleHeader(request.Header, "X-CSRF-Token"), MemberID: memberID, Now: r.dependencies.Now()})
