@@ -8,14 +8,18 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/config"
 	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
 )
 
 type oidcStoreFake struct {
@@ -23,6 +27,7 @@ type oidcStoreFake struct {
 	consumeCalls int
 	consumed     bool
 	members      []string
+	membersErr   error
 	session      SessionInput
 	selection    OrganizationSelectionInput
 }
@@ -49,7 +54,7 @@ func (*oidcStoreFake) IdentityID(context.Context, string, string) (string, error
 	return "identity-1", nil
 }
 func (f *oidcStoreFake) MembersForIdentity(context.Context, string, string) ([]string, error) {
-	return f.members, nil
+	return f.members, f.membersErr
 }
 func (f *oidcStoreFake) CreateSession(_ context.Context, session SessionInput) error {
 	f.session = session
@@ -65,6 +70,9 @@ func TestCompleteLoginRequiresTransaction(t *testing.T) {
 	_, err := a.CompleteLogin(context.Background(), CallbackInput{TransactionCookie: "missing", State: "state", Code: "code"})
 	if err == nil {
 		t.Fatal("missing transaction was accepted")
+	}
+	if errors.Is(err, ErrInvalidAuthentication) {
+		t.Fatalf("configuration failure was classified as an expected authentication rejection: %v", err)
 	}
 }
 
@@ -86,15 +94,162 @@ func TestBeginLoginDoesNotReuseBrowserSecretsAsRecordID(t *testing.T) {
 }
 
 func TestCompleteLoginConsumesTransactionBeforeRejectingMissingCode(t *testing.T) {
-	store := &oidcStoreFake{}
+	store := &oidcStoreFake{created: AuthTransaction{Cookie: "cookie", State: "state"}}
 	a := &Authenticator{transactions: store, verifier: &oidc.IDTokenVerifier{}}
 	_, err := a.CompleteLogin(context.Background(), CallbackInput{TransactionCookie: "cookie", State: "state"})
-	if err == nil {
-		t.Fatal("missing authorization code was accepted")
+	if !errors.Is(err, ErrInvalidAuthentication) {
+		t.Fatalf("err = %v, want invalid authentication", err)
 	}
 	if store.consumeCalls != 1 {
 		t.Fatalf("consume calls = %d, want 1", store.consumeCalls)
 	}
+}
+
+func TestCompleteLoginClassifiesMissingIDTokenAsInvalidAuthentication(t *testing.T) {
+	store := &oidcStoreFake{}
+	a, ctx := localCallbackAuthenticator(t, store, `{"access_token":"access","token_type":"Bearer"}`)
+
+	_, err := a.CompleteLogin(ctx, CallbackInput{TransactionCookie: "cookie", State: "state", Code: "valid"})
+	if !errors.Is(err, ErrInvalidAuthentication) {
+		t.Fatalf("err = %v, want invalid authentication", err)
+	}
+}
+
+func TestCompleteLoginClassifiesInvalidIDTokenAsInvalidAuthentication(t *testing.T) {
+	store := &oidcStoreFake{}
+	a, ctx := localCallbackAuthenticator(t, store, `{"access_token":"access","token_type":"Bearer","id_token":"not-a-jwt"}`)
+
+	_, err := a.CompleteLogin(ctx, CallbackInput{TransactionCookie: "cookie", State: "state", Code: "valid"})
+	if !errors.Is(err, ErrInvalidAuthentication) {
+		t.Fatalf("err = %v, want invalid authentication", err)
+	}
+}
+
+func TestCompleteLoginClassifiesInvalidNonceAndSubjectAsInvalidAuthentication(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		claims map[string]any
+	}{
+		{name: "nonce", claims: map[string]any{"nonce": "wrong", "sub": "subject-1"}},
+		{name: "subject", claims: map[string]any{"nonce": "nonce", "sub": ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &oidcStoreFake{}
+			a, ctx := localCallbackAuthenticator(t, store, callbackTokenResponse(t, tc.claims))
+
+			_, err := a.CompleteLogin(ctx, CallbackInput{TransactionCookie: "cookie", State: "state", Code: "valid"})
+			if !errors.Is(err, ErrInvalidAuthentication) {
+				t.Fatalf("err = %v, want invalid authentication", err)
+			}
+		})
+	}
+}
+
+func TestCompleteLoginPreservesMembershipLookupFailure(t *testing.T) {
+	databaseErr := errors.New("database unavailable")
+	store := &oidcStoreFake{membersErr: databaseErr}
+	a, ctx := localCallbackAuthenticator(t, store, callbackTokenResponse(t, nil))
+
+	_, err := a.CompleteLogin(ctx, CallbackInput{TransactionCookie: "cookie", State: "state", Code: "valid"})
+	if !errors.Is(err, databaseErr) {
+		t.Fatalf("err = %v, want database failure", err)
+	}
+	if errors.Is(err, ErrInvalidAuthentication) || errors.Is(err, ErrNotFound) {
+		t.Fatalf("database failure was classified as an expected authentication rejection: %v", err)
+	}
+}
+
+func TestCompleteLoginDoesNotClassifyTokenExchangeTransportFailureAsInvalidAuthentication(t *testing.T) {
+	store := &oidcStoreFake{}
+	a, _ := localCallbackAuthenticator(t, store, "")
+	transportErr := errors.New("identity provider unavailable")
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, transportErr
+	})}
+	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, client)
+
+	_, err := a.CompleteLogin(ctx, CallbackInput{TransactionCookie: "cookie", State: "state", Code: "valid"})
+	if err == nil {
+		t.Fatal("transport failure was accepted")
+	}
+	if errors.Is(err, ErrInvalidAuthentication) {
+		t.Fatalf("transport failure was classified as an expected authentication rejection: %v", err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func localCallbackAuthenticator(t *testing.T, store *oidcStoreFake, tokenResponse string) (*Authenticator, context.Context) {
+	t.Helper()
+	const issuer = "https://issuer.example"
+	var key [32]byte
+	encryptedVerifier, err := EncryptVerifier(key, []byte("pkce-verifier"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.created = AuthTransaction{
+		Cookie:            "cookie",
+		State:             "state",
+		Nonce:             "nonce",
+		EncryptedVerifier: encryptedVerifier,
+		Issuer:            issuer,
+		ClientID:          "client",
+		RedirectURI:       "https://app.example/callback",
+		ExpiresAt:         time.Now().Add(time.Minute),
+	}
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(tokenResponse)),
+			Request:    request,
+		}, nil
+	})}
+	a := &Authenticator{
+		transactions: store,
+		config: config.Config{
+			OIDCIssuer:         issuer,
+			OIDCClientID:       "client",
+			OIDCRedirectURI:    "https://app.example/callback",
+			AuthTransactionKey: key,
+		},
+		oauth:    oauth2.Config{ClientID: "client", Endpoint: oauth2.Endpoint{TokenURL: issuer + "/token"}, RedirectURL: "https://app.example/callback"},
+		verifier: oidc.NewVerifier(issuer, nil, &oidc.Config{ClientID: "client", InsecureSkipSignatureCheck: true}),
+	}
+	return a, context.WithValue(context.Background(), oauth2.HTTPClient, client)
+}
+
+func callbackTokenResponse(t *testing.T, claimOverrides map[string]any) string {
+	t.Helper()
+	claims := map[string]any{
+		"iss":   "https://issuer.example",
+		"aud":   "client",
+		"exp":   time.Now().Add(time.Minute).Unix(),
+		"iat":   time.Now().Unix(),
+		"nonce": "nonce",
+		"sub":   "subject-1",
+	}
+	for name, value := range claimOverrides {
+		claims[name] = value
+	}
+	header, err := json.Marshal(map[string]string{"alg": "RS256", "typ": "JWT"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawToken := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString([]byte("signature"))
+	response, err := json.Marshal(map[string]any{"access_token": "access", "token_type": "Bearer", "id_token": rawToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(response)
 }
 
 func TestOIDCCompleteLoginVerifiesTokenAndBranchesByMembershipCount(t *testing.T) {
@@ -160,8 +315,8 @@ func TestOIDCCompleteLoginRejectsInvalidTokenClaimsAndConsumesTransaction(t *tes
 			}
 			provider.setChallenge(t, start.AuthorizationURL)
 			provider.token = provider.signedToken(t, store.created.Nonce, tc.claims)
-			if _, err := a.CompleteLogin(context.Background(), CallbackInput{TransactionCookie: start.TransactionCookie, State: store.created.State, Code: "valid"}); err == nil {
-				t.Fatal("invalid token was accepted")
+			if _, err := a.CompleteLogin(context.Background(), CallbackInput{TransactionCookie: start.TransactionCookie, State: store.created.State, Code: "valid"}); !errors.Is(err, ErrInvalidAuthentication) {
+				t.Fatalf("err = %v, want invalid authentication", err)
 			}
 			if !store.consumed || store.session.ID != "" {
 				t.Fatalf("consumed=%v session=%#v", store.consumed, store.session)

@@ -137,6 +137,7 @@ func TestCallbackRejectsInvalidAndReplayedAttempts(t *testing.T) {
 		{"expired", auth.ErrExpired, 400, "invalid_auth_transaction"},
 		{"consumed", auth.ErrConsumed, 400, "invalid_auth_transaction"},
 		{"state mismatch", auth.ErrForbidden, 400, "invalid_auth_transaction"},
+		{"invalid ID token", auth.ErrInvalidAuthentication, 400, "invalid_auth_transaction"},
 		{"unexpected", errors.New("raw-id-token-secret"), 500, "internal_error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -97,7 +97,7 @@ func (a *Authenticator) CompleteLogin(ctx context.Context, input CallbackInput) 
 		return LoginResult{}, err
 	}
 	if input.Code == "" {
-		return LoginResult{}, fmt.Errorf("authorization code is required")
+		return LoginResult{}, fmt.Errorf("%w: authorization code is required", ErrInvalidAuthentication)
 	}
 	if transaction.Issuer != a.config.OIDCIssuer || transaction.ClientID != a.config.OIDCClientID || transaction.RedirectURI != a.config.OIDCRedirectURI {
 		return LoginResult{}, fmt.Errorf("auth transaction configuration mismatch")
@@ -112,24 +112,27 @@ func (a *Authenticator) CompleteLogin(ctx context.Context, input CallbackInput) 
 	}
 	raw, ok := token.Extra("id_token").(string)
 	if !ok {
-		return LoginResult{}, fmt.Errorf("ID token missing")
+		return LoginResult{}, fmt.Errorf("%w: ID token missing", ErrInvalidAuthentication)
 	}
 	idToken, err := a.verifier.Verify(ctx, raw)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("ID token invalid")
+		return LoginResult{}, fmt.Errorf("%w: ID token invalid", ErrInvalidAuthentication)
 	}
 	var claims struct {
 		Nonce   string `json:"nonce"`
 		Subject string `json:"sub"`
 	}
 	if err := idToken.Claims(&claims); err != nil || claims.Nonce != transaction.Nonce {
-		return LoginResult{}, fmt.Errorf("ID token nonce invalid")
+		return LoginResult{}, fmt.Errorf("%w: ID token nonce invalid", ErrInvalidAuthentication)
 	}
 	if claims.Subject == "" {
-		return LoginResult{}, fmt.Errorf("ID token subject invalid")
+		return LoginResult{}, fmt.Errorf("%w: ID token subject invalid", ErrInvalidAuthentication)
 	}
 	members, err := a.transactions.MembersForIdentity(ctx, idToken.Issuer, claims.Subject)
-	if err != nil || len(members) == 0 {
+	if err != nil {
+		return LoginResult{}, err
+	}
+	if len(members) == 0 {
 		return LoginResult{}, ErrNotFound
 	}
 	if len(members) == 1 {

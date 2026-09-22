@@ -41,7 +41,7 @@ func WriteError(w http.ResponseWriter, apiErr APIError) {
 
 func authAPIError(err error) APIError {
 	switch {
-	case errors.Is(err, auth.ErrNotFound), errors.Is(err, auth.ErrExpired), errors.Is(err, auth.ErrConsumed):
+	case errors.Is(err, auth.ErrNotFound), errors.Is(err, auth.ErrExpired), errors.Is(err, auth.ErrConsumed), errors.Is(err, auth.ErrInvalidAuthentication):
 		return APIError{http.StatusBadRequest, "invalid_auth_transaction"}
 	case errors.Is(err, auth.ErrCSRFValidation):
 		return APIError{http.StatusForbidden, "csrf_validation_failed"}
