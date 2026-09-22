@@ -41,7 +41,7 @@
 - 提供: nullable な `organizations.default_approver_member_id text REFERENCES members(id)`。
 - 利用元: Task 4 の `internal/store/postgres.Repository.DefaultApprover(context.Context, organizationID)`。
 
-- [ ] **Step 1: 失敗する migration integration test を書く**
+- [x] **Step 1: 失敗する migration integration test を書く**
 
 全 migration を適用し、Organization `org-default`、それに属する Member `approver-default`、別 Organization に属する `other-org-member` を作成するテストを追加する。`org-default.default_approver_member_id = 'approver-default'` は成功し、`other-org-member` の設定は失敗することを確認する。既存の `TEST_DATABASE_URL` と実 PostgreSQL 接続を使用する。
 
@@ -59,13 +59,13 @@ func TestDefaultApproverBelongsToOrganization(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: migration test を実行し RED を確認する**
+- [x] **Step 2: migration test を実行し RED を確認する**
 
 Run: `pnpm run test:db`
 
 期待結果: `default_approver_member_id` が存在しないため FAIL。
 
-- [ ] **Step 3: 最小の forward-only migration を追加する**
+- [x] **Step 3: 最小の forward-only migration を追加する**
 
 `organizations.default_approver_member_id` を nullable な列として追加し、参照先 Member が同一 Organization に属することを強制する。`members` の `(id, organization_id)` に composite unique key を追加し、`(default_approver_member_id, id)` からその key への composite foreign key を設定する。列を non-null にしてはならない。provisioning 未完了は許可され、Task 3 は設定未完了を `ErrApprovalRoutingUnavailable` に変換済みである。
 
@@ -80,13 +80,13 @@ ALTER TABLE organizations
 
 down migration では、外部キー、列、補助 unique constraint の順に依存関係を保って削除する。
 
-- [ ] **Step 4: DB test を実行し GREEN を確認する**
+- [x] **Step 4: DB test を実行し GREEN を確認する**
 
 Run: `pnpm run test:db`
 
 期待結果: PASS。テスト終了後に Compose の service、network、volume が削除される。
 
-- [ ] **Step 5: Task 4 文書を同期して commit する**
+- [x] **Step 5: Task 4 文書を同期して commit する**
 
 元の計画と handoff の Task 4 ファイル一覧・対象範囲に、PDR-002 の永続化修復として migration `000003` を追加する。`.superpowers/sdd/2026-09-20-go-api-implementation/progress.md` へ、検出した schema 矛盾、人間による承認、実 PostgreSQL test のコマンドと結果を日本語で追記する。
 
@@ -108,21 +108,21 @@ git commit -m "fix: persist organization default approver"
 - 利用: `organizations.default_approver_member_id`、`member_roles`、`internal/application/requests.Repository`。
 - 提供: `NewRepository(*sql.DB) *Repository`。SQL row を `internal/store/postgres` 外へ公開せず、`requests.Repository` の全 method を実装する。
 
-- [ ] **Step 1: 失敗する repository integration test を書く**
+- [x] **Step 1: 失敗する repository integration test を書く**
 
 既定 Approver に Approver Member を設定した Organization、Requester、未割当 Admin を seed する。Draft 作成・更新、誤った ID/version/state の条件付き Submit/Approve error、同時 Submit/Approve の1成功1競合、条件失敗後に Audit Event がないこと、未割当 Approve の拒否と非永続化、assignee 限定の `ListPending` を test する。
 
-- [ ] **Step 2: focused test を実行し RED を確認する**
+- [x] **Step 2: focused test を実行し RED を確認する**
 
 Run: `pnpm run test:db`
 
 期待結果: `NewRepository` と PostgreSQL adapter が存在しないため FAIL。
 
-- [ ] **Step 3: 明示的な SQL repository を実装する**
+- [x] **Step 3: 明示的な SQL repository を実装する**
 
 既存 application interface を実装する。`DefaultApprover` は設定済み Organization 参照を読み、設定済み ID と独立した `approver` role 判定を返す。Submit/Approve はそれぞれ1 transaction で、`id`、`version`、期待する `status` により `requests` を条件更新し、`RowsAffected` を確認する。条件成功後に限り Approval と Audit Event を書き込む。not-found/version-conflict/invalid-state を区別する。
 
-- [ ] **Step 4: 完全な検証 suite を実行する**
+- [x] **Step 4: 完全な検証 suite を実行する**
 
 Run:
 
@@ -140,7 +140,7 @@ git diff --check
 
 期待結果: すべて exit 0。
 
-- [ ] **Step 5: Task 4 を commit し execution ledger を更新する**
+- [x] **Step 5: Task 4 を commit し execution ledger を更新する**
 
 ```bash
 git add internal/store/postgres/requests.go internal/store/postgres/requests_test.go internal/store/postgres/seed_test.go

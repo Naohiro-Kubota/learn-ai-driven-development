@@ -50,7 +50,7 @@
 - Consumes: `members(id)`、`oidc_auth_transactions`、migration `000001`〜`000003`。
 - Produces: identity、対応表、選択transaction、候補snapshot、および`oidc_auth_transactions.created_at`。
 
-- [ ] **Step 1: 失敗するmigration integration testを書く**
+- [x] **Step 1: 失敗するmigration integration testを書く**
 
 `TestMigrationsCreateWorkflowAndAuthTables`へtable存在、`created_at`非NULL、`UNIQUE (issuer, subject)`、同一identityの異Organization Member対応、候補tableの重複拒否を追加する。
 
@@ -61,12 +61,12 @@ _, err = db.Exec(`INSERT INTO oidc_identities (id, issuer, subject) VALUES ('ide
 if err == nil { t.Fatal("duplicate issuer/subject was accepted") }
 ```
 
-- [ ] **Step 2: migration testが失敗することを確認する**
+- [x] **Step 2: migration testが失敗することを確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run TestMigrationsCreateWorkflowAndAuthTables -count=1`  
 Expected: FAIL。identity tableまたは`created_at`が存在しない。
 
-- [ ] **Step 3: migrationを最小実装する**
+- [x] **Step 3: migrationを最小実装する**
 
 ```sql
 CREATE TABLE oidc_identities (
@@ -94,12 +94,12 @@ ALTER TABLE oidc_auth_transactions ADD COLUMN created_at timestamptz NOT NULL DE
 
 down migrationは候補table、選択transaction、対応表、identity table、`created_at`を逆順に削除する。
 
-- [ ] **Step 4: migration testを成功確認する**
+- [x] **Step 4: migration testを成功確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run TestMigrationsCreateWorkflowAndAuthTables -count=1`  
 Expected: PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add migrations/000004_oidc_identity_memberships.up.sql migrations/000004_oidc_identity_memberships.down.sql internal/store/postgres/migrations_test.go
@@ -119,7 +119,7 @@ git commit -m "feat: add OIDC identity membership schema"
 - Consumes: Task 1 schema。
 - Produces: `internal/auth`の`Identity`、`AuthTransaction`、`Session`、`OrganizationSelection`、`ErrNotFound`、`ErrExpired`、`ErrConsumed`と、`CreateAuthTransaction`、`ConsumeAuthTransaction`、`MembersForIdentity`、`CreateSession`、`AuthenticateSession`、`RevokeSession`、`CreateOrganizationSelection`、`ConsumeOrganizationSelection`。
 
-- [ ] **Step 1: 実PostgreSQLの失敗するrepository testを書く**
+- [x] **Step 1: 実PostgreSQLの失敗するrepository testを書く**
 
 まず`session_test.go`にopaque値のSHA-256 hash、AES-GCM暗号化と復号、production/development cookie policyを検証する失敗testを書く。続けて同一identityを`org-1/member-1`と`org-2/member-2`へ対応付けるfixtureを作る。cookie/CSRF hashだけの保存、issuer違いの候補0件、候補snapshot、候補外Member・CSRF不一致・replay・expiryの拒否、成功時に1件だけsessionが作られることをtable-driven integration testで検証する。
 
@@ -130,12 +130,12 @@ _, err := repository.ConsumeOrganizationSelection(ctx, auth.ConsumeOrganizationS
 if !errors.Is(err, auth.ErrForbidden) { t.Fatalf("err = %v, want ErrForbidden", err) }
 ```
 
-- [ ] **Step 2: repository testが失敗することを確認する**
+- [x] **Step 2: repository testが失敗することを確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run 'Test(Identity|Session|OrganizationSelection)' -count=1`  
 Expected: FAIL。session repositoryまたはauth値型が未実装。
 
-- [ ] **Step 3: repositoryとfixtureを実装する**
+- [x] **Step 3: repositoryとfixtureを実装する**
 
 入力cookieとCSRF tokenは`sha256.Sum256`して照合する。`ConsumeOrganizationSelection`は単一transactionでactive recordを`FOR UPDATE`し、hash、expiry、CSRF hash、候補tableを照合して`consumed_at`を更新し、その後に`app_sessions`へinsertする。識別済みselectionは拒否時もconsumeし、rollback時にsessionを残さない。
 
@@ -150,12 +150,12 @@ func (r *Repository) ConsumeOrganizationSelection(ctx context.Context, input Con
 
 最初に`session.go`へrepository非依存の値型、sentinel error、SHA-256/AES-GCM helper、cookie policyを実装する。次にrepositoryでその型を使用する。`AuthenticateSession`はcookie hash、revocation、idle/absolute expiryを検査し、成功時だけ`last_used_at`を更新する。
 
-- [ ] **Step 4: repository testを成功確認する**
+- [x] **Step 4: repository testを成功確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run 'Test(Identity|Session|OrganizationSelection)' -count=1`  
 Expected: PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/auth/session.go internal/auth/session_test.go internal/store/postgres/sessions.go internal/store/postgres/sessions_test.go internal/store/postgres/seed_test.go
@@ -172,7 +172,7 @@ git commit -m "feat: persist OIDC identities and selection transactions"
 - Consumes: `config.Config`、Task 2のsession値型とrepository、`oidc.Provider`、`oauth2.Config`。
 - Produces: `Authenticator.BeginLogin(context.Context) (LoginStart, error)`、`Authenticator.CompleteLogin(context.Context, CallbackInput) (LoginResult, error)`、`SessionStore.Authenticate`、`SessionStore.Revoke`、`SessionStore.CompleteOrganizationSelection`。
 
-- [ ] **Step 1: 失敗するauth testを書く**
+- [x] **Step 1: 失敗するauth testを書く**
 
 `httptest.Server`でdiscovery、JWKS、token endpointを持つOIDC test doubleを作る。state、nonce、issuer、audience、署名、有効期限、PKCE verifier不一致とcallback replayを拒否し、単一候補はsession、複数候補はselectionだけを返すことを検証する。
 
@@ -184,12 +184,12 @@ if result.Session != nil || result.Selection == nil {
 }
 ```
 
-- [ ] **Step 2: auth testが失敗することを確認する**
+- [x] **Step 2: auth testが失敗することを確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/auth -count=1`  
 Expected: FAIL。packageまたはAuthenticatorが未実装。
 
-- [ ] **Step 3: OIDC、cookie、暗号化境界を最小実装する**
+- [x] **Step 3: OIDC、cookie、暗号化境界を最小実装する**
 
 `oidc.NewProvider`を初期化時に一度だけ呼び、同じProviderの`VerifierContext`を再利用する。`crypto/rand`、`oauth2.GenerateVerifier`、`oauth2.S256ChallengeOption`、`oidc.Nonce`、`oauth2.VerifierOption`を使う。PKCE verifierはAES-GCM暗号化、cookie/state/CSRF tokenはhashだけをrepositoryへ渡す。
 
@@ -204,12 +204,12 @@ func (s *SessionStore) CompleteOrganizationSelection(ctx context.Context, input 
 
 認証transactionを最初にconsumeし、ID Token検証後だけ`iss`/ `sub`でMember候補を解決する。raw secretをerror、JSON、logへ含めない。
 
-- [ ] **Step 4: auth testを成功確認する**
+- [x] **Step 4: auth testを成功確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/auth -count=1`  
 Expected: PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/auth/oidc.go internal/auth/oidc_test.go
@@ -228,7 +228,7 @@ git commit -m "feat: add OIDC login and member-bound sessions"
 - Consumes: Task 3の`LoginResult`と`SessionStore.CompleteOrganizationSelection`、`config.Config.AllowedOrigin`。
 - Produces: `GET /auth/oidc/organization-selection`、`POST /auth/oidc/organization-selection`、既存login/callback route。
 
-- [ ] **Step 1: 失敗するHTTP contract testとOpenAPI assertionsを書く**
+- [x] **Step 1: 失敗するHTTP contract testとOpenAPI assertionsを書く**
 
 GETはselection cookieで候補Organization/Member表示名とselection専用CSRF tokenを返す。POSTは`memberId` JSONと`X-CSRF-Token`を受け、成功時だけsession cookieをSet-CookieしてUIへ302 redirectする。missing/invalid/replayed selectionは400 `invalid_auth_transaction`、候補外Memberは403 `forbidden`、tokenまたはOrigin不一致は403 `csrf_validation_failed`とする。
 
@@ -242,12 +242,12 @@ handler.ServeHTTP(rr, r)
 if rr.Code != http.StatusFound { t.Fatalf("status = %d, want 302", rr.Code) }
 ```
 
-- [ ] **Step 2: HTTP testが失敗することを確認する**
+- [x] **Step 2: HTTP testが失敗することを確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -run 'Test(Callback|OrganizationSelection)' -count=1`  
 Expected: FAIL。routerとhandlerが未実装。
 
-- [ ] **Step 3: contract、router、handlerを最小実装する**
+- [x] **Step 3: contract、router、handlerを最小実装する**
 
 GETはsessionを発行せず候補とraw selection CSRF tokenだけを返す。POSTは正確なOrigin、header token、cookieを検証してからselectionをconsumeする。callbackは単一候補ならsession redirect、複数候補なら選択画面へredirectする。session発行まで`application.Actor`をcontextへ置かない。
 
@@ -256,12 +256,12 @@ mux.Handle("GET /auth/oidc/organization-selection", organizationSelectionHandler
 mux.Handle("POST /auth/oidc/organization-selection", completeOrganizationSelectionHandler)
 ```
 
-- [ ] **Step 4: HTTP testを成功確認する**
+- [x] **Step 4: HTTP testを成功確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -run 'Test(Callback|OrganizationSelection)' -count=1`  
 Expected: PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add api/openapi.yaml internal/httpapi/router.go internal/httpapi/auth_handlers.go internal/httpapi/auth_handlers_test.go
@@ -278,16 +278,16 @@ git commit -m "feat: add organization selection after OIDC login"
 - Consumes: Tasks 1〜4。
 - Produces: ADR-013と実装境界に整合したhandoff、計画、検証記録。
 
-- [ ] **Step 1: documentation差分を書く**
+- [x] **Step 1: documentation差分を書く**
 
 「migrationを追加・変更しない」「callbackが必ずsessionを発行する」という旧記述を、ADR-013、identity provisioning、複数候補の選択transaction、Task 6の新endpointに更新する。Task 8で作成予定の`docs/development/local-api.md`は先取り作成しない。
 
-- [ ] **Step 2: documentation diffを確認する**
+- [x] **Step 2: documentation diffを確認する**
 
 Run: `git diff -- docs/development/handoff-2026-09-21-task5.md docs/superpowers/plans/2026-09-20-go-api-implementation.md`  
 Expected: ADR-013に整合し、既存migrationを編集しない記録だけが含まれる。
 
-- [ ] **Step 3: 完全検証を実行する**
+- [x] **Step 3: 完全検証を実行する**
 
 ```bash
 source /Users/nao/.nvm/nvm.sh
@@ -303,11 +303,11 @@ git diff --check
 
 Expected: PASS。既知のVitestとNode標準testの収集競合による`pnpm test`失敗は、scope外リスクとして記録する。
 
-- [ ] **Step 4: execution ledgerを更新する**
+- [x] **Step 4: execution ledgerを更新する**
 
 `.superpowers/sdd/2026-09-20-go-api-implementation/progress.md`へ、ADR-013、identity provisioning前提、実行した検証と結果、既知の`pnpm test`問題を日本語で追記する。このgit管理外directoryはcommitしない。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/development/handoff-2026-09-21-task5.md docs/superpowers/plans/2026-09-20-go-api-implementation.md

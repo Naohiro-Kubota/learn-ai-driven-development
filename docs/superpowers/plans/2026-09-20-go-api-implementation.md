@@ -51,7 +51,7 @@
 - 提供: `scripts/check-gofmt.mjs`からimport可能な`findUnformattedFiles(files, runGofmt)`。
 - 利用元: 以降の全Task、Task 8の完全verification suite、CI。
 
-- [ ] **Step 1: 失敗する`gofmt`検査testを書く**
+- [x] **Step 1: 失敗する`gofmt`検査testを書く**
 
 `node:test`で、整形済みのGo sourceには空配列を返し、未整形のGo sourceにはそのfile pathを返すことをtestする。testは実際の`gofmt -l`を呼ばず、`runGofmt` test doubleを渡してexit statusと標準出力の処理を固定する。
 
@@ -66,13 +66,13 @@ test("reports paths printed by gofmt -l", () => {
 });
 ```
 
-- [ ] **Step 2: focused testを実行して失敗を確認する**
+- [x] **Step 2: focused testを実行して失敗を確認する**
 
 Run: `node --test scripts/check-gofmt.test.mjs`
 
 期待結果: `scripts/check-gofmt.mjs`と`findUnformattedFiles`が存在しないためFAIL。
 
-- [ ] **Step 3: Biome設定、Go検査script、package scriptを実装する**
+- [x] **Step 3: Biome設定、Go検査script、package scriptを実装する**
 
 `@biomejs/biome` **2.5.14**を正確な`devDependency`として追加する。`biome.json`ではformatterとrecommended linterを有効にし、`node_modules`、`dist`、`coverage`、`playwright-report`、`test-results`を検査対象外にする。import整理やプロダクト固有ruleを暗黙に有効化しない。
 
@@ -92,7 +92,7 @@ Run: `node --test scripts/check-gofmt.test.mjs`
 
 `pnpm install --lockfile-only --ignore-scripts`でlockfileを更新する前に、ADR-007の`minimumReleaseAge`、`strictDepBuilds`、空の`allowBuilds`を確認する。Biomeまたはtransitive dependencyがbuild/install scriptの許可を要求した場合は、`allowBuilds`を編集せずに作業を止めて人間へ報告する。`docs/development/toolchain.md`にはBiome 2.5.14とADR-012を記録し、OIDC Go libraryの記載をAccepted ADR-010と矛盾しない内容へ更新する。
 
-- [ ] **Step 4: Formatter/Linterのfocused verificationを実行する**
+- [x] **Step 4: Formatter/Linterのfocused verificationを実行する**
 
 Run:
 
@@ -107,7 +107,7 @@ GOTOOLCHAIN=go1.27.1 go vet ./...
 
 期待結果: すべてPASS。`pnpm install`はlockfileを書き換えず、各検査はworking treeを書き換えない。
 
-- [ ] **Step 5: このタスクのファイルをcommitする**
+- [x] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add biome.json scripts/check-gofmt.mjs scripts/check-gofmt.test.mjs package.json pnpm-workspace.yaml pnpm-lock.yaml docs/development/toolchain.md
@@ -127,7 +127,7 @@ git commit -m "build: add TypeScript and Go quality checks"
 - 提供: database URL、listener address、許可origin、OIDC issuer/client ID/redirect URI、cookie/session secret設定を含む`config.Config`。
 - 利用元: `cmd/api/main.go`、OIDC client構築、session middleware、PostgreSQL設定。
 
-- [ ] **Step 1: 失敗するconfiguration testを書く**
+- [x] **Step 1: 失敗するconfiguration testを書く**
 
 ```go
 func TestLoadRejectsProductionWithoutSecureCookie(t *testing.T) {
@@ -154,13 +154,13 @@ func TestLoadAllowsInsecureCookieOnlyForLoopbackDevelopment(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: focused testを実行して失敗を確認する**
+- [x] **Step 2: focused testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/config -run TestLoad -count=1`
 
 期待結果: packageと`Load`が存在しないためFAIL。
 
-- [ ] **Step 3: 正確なOIDC依存とconfiguration validationを追加する**
+- [x] **Step 3: 正確なOIDC依存とconfiguration validationを追加する**
 
 `github.com/coreos/go-oidc/v3 v3.21.0`と`golang.org/x/oauth2 v0.37.0`を直接requireへ追加する。必須の非空configuration値と正のdurationを検証する`Config`を実装する。base64 decode後32 byteとなるauth transaction暗号化鍵を必須にする。`APP_COOKIE_SECURE=false`は、`APP_ENV=development`かつapplication/allowed-originのhostがともにloopbackの場合だけ許可し、それ以外は起動時に失敗させる。
 
@@ -174,13 +174,13 @@ type Config struct {
 }
 ```
 
-- [ ] **Step 4: focused testとmodule integrity checkを実行する**
+- [x] **Step 4: focused testとmodule integrity checkを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/config -count=1 && GOTOOLCHAIN=go1.27.1 go mod verify`
 
 期待結果: PASS。
 
-- [ ] **Step 5: このタスクのファイルをcommitする**
+- [x] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add go.mod go.sum internal/config/config.go internal/config/config_test.go
@@ -201,7 +201,7 @@ git commit -m "feat: add validated API runtime configuration"
 - 提供: 後続repository methodに必要なunique constraintとforeign key constraint。
 - 利用元: 全PostgreSQL repositoryとintegration test。
 
-- [ ] **Step 1: 失敗するmigration integration testを書く**
+- [x] **Step 1: 失敗するmigration integration testを書く**
 
 `TEST_DATABASE_URL`から新しいschema/databaseを作成し、golang-migrateで全`up` migrationを適用して、必要なtableとconstraintの存在を確認する。逆順に`down` migrationを適用してschemaが空になることを確認するtestも追加する。
 
@@ -215,13 +215,13 @@ func TestMigrationsCreateWorkflowAndAuthTables(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: migration testを実行して失敗を確認する**
+- [x] **Step 2: migration testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run TestMigrationsCreateWorkflowAndAuthTables -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
 期待結果: migration fileが存在しないためFAIL。
 
-- [ ] **Step 3: migrationを実装する**
+- [x] **Step 3: migrationを実装する**
 
 公開entityには不透明なtext IDを使用し、内部persistence fieldはrepositoryに閉じ込める。次を追加する。
 
@@ -233,13 +233,13 @@ Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run TestMigrations
 
 Pending approvalをassigneeとRequest statusでindexし、active sessionとtransaction lookup keyもindexする。down migrationは依存関係を壊さない逆順でtableを削除する。
 
-- [ ] **Step 4: migrationのup/down testを実行する**
+- [x] **Step 4: migrationのup/down testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run TestMigrations -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
 期待結果: PASS。
 
-- [ ] **Step 5: このタスクのファイルをcommitする**
+- [x] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add migrations internal/store/postgres/migrations_test.go
@@ -260,7 +260,7 @@ git commit -m "feat: add workflow and auth database migrations"
 - 提供: `CreateDraft`、`UpdateDraft`、`Submit`、`Approve`、`Get`、`ListPending`、`ListAuditEvents` methodと、型付きerror（`ErrForbidden`、`ErrNotFound`、`ErrVersionConflict`、`ErrInvalidState`、`ErrApprovalRoutingUnavailable`）。
 - 利用元: PostgreSQL adapterとHTTP handler。
 
-- [ ] **Step 1: 失敗するtable-driven service testを書く**
+- [x] **Step 1: 失敗するtable-driven service testを書く**
 
 Title trim、空Description、Draft限定更新、既定Approverへの自己Submit、既定Approver不在、誤ったRequester、誤ったApprover、古いversion、audit snapshotを対象にする。
 
@@ -273,13 +273,13 @@ func TestSubmitRejectsStaleVersionWithoutAuditEvent(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: unit testを実行して失敗を確認する**
+- [x] **Step 2: unit testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/application/requests -count=1`
 
 期待結果: serviceと型付きerrorが存在しないためFAIL。
 
-- [ ] **Step 3: 純粋なapplication ruleを実装する**
+- [x] **Step 3: 純粋なapplication ruleを実装する**
 
 HTTP、SQL、OIDC typeをこのpackageへ持ち込まない。`strings.TrimSpace`でTitleをnormalizeし、normalize後の空Titleを拒否してPDR-001の長さ制約を適用する。SubmitでPDR-002を適用し、repositoryが返すApprovalに割当Approverを保存する。成功した変更操作ごとに1件のaudit eventを作成する。
 
@@ -292,13 +292,13 @@ type Repository interface {
 }
 ```
 
-- [ ] **Step 4: unit testを実行する**
+- [x] **Step 4: unit testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/domain ./internal/application/requests -count=1`
 
 期待結果: PASS。
 
-- [ ] **Step 5: このタスクのファイルをcommitする**
+- [x] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add internal/domain internal/application/requests
@@ -322,7 +322,7 @@ git commit -m "feat: add request workflow application service"
 
 PDR-002でAcceptedとなっているOrganization既定Approverを永続化するため、最初に`000003` migrationで`organizations.default_approver_member_id`を追加する。この参照先は同一OrganizationのMemberに限定し、既定Approverの未設定はapplication serviceが既存どおり`ErrApprovalRoutingUnavailable`へ変換する。詳細は`docs/superpowers/plans/2026-09-21-default-approver-schema-repair.md`を参照する。
 
-- [ ] **Step 1: 失敗するPostgreSQL integration testを書く**
+- [x] **Step 1: 失敗するPostgreSQL integration testを書く**
 
 Organization、Requester、Approver、Admin、既定Approverを各1件seedする。条件付き更新predicateが`id`、期待`version`、期待current stateの全てを含むことをtestする。同じ期待versionで2つのgoroutineを起動し、SubmitまたはApproveが1件だけ成功することを確認する。
 
@@ -336,23 +336,23 @@ func TestApproveIsAtomicWithAuditEvent(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: integration testを実行して失敗を確認する**
+- [x] **Step 2: integration testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run 'Test(Submit|Approve)' -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
 期待結果: repository実装が存在しないためFAIL。
 
-- [ ] **Step 3: 明示的なSQL repositoryを実装する**
+- [x] **Step 3: 明示的なSQL repositoryを実装する**
 
 SubmitとApproveでは`BEGIN`/`COMMIT`を使用する。各transactionで`WHERE id = $1 AND version = $2 AND status = $3`により`requests`を更新し、`RowsAffected`を確認してから対応するApproval/Audit Eventを書き込み、commitする。更新行数が0の場合はeventを書き込まず、型付きconflict/state errorを返す。table rowを直接公開せず、domain DTOへmapする。
 
-- [ ] **Step 4: 全PostgreSQL repository testを実行する**
+- [x] **Step 4: 全PostgreSQL repository testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
 期待結果: 同時変更のcaseを含めてPASS。
 
-- [ ] **Step 5: このタスクのファイルをcommitする**
+- [x] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add internal/store/postgres
@@ -374,7 +374,7 @@ git commit -m "feat: persist workflow transitions atomically"
 - 利用: OIDC issuer/client/redirect configuration、`oidc.Provider`、`oauth2.Config`、暗号化鍵、PostgreSQL auth table。
 - 利用元: HTTP login/callback handlerとauthentication middleware。
 
-- [ ] **Step 1: 失敗するauth/session testを書く**
+- [x] **Step 1: 失敗するauth/session testを書く**
 
 `httptest.Server`をOIDC discovery/JWKS/token endpointのtest doubleにする。state不一致、nonce不一致、無効issuer/audience/signature、誤ったverifierによるcode交換、callback replay、暗号化verifier保存、logout、期限切れsession、CSRF token検証をtestする。
 
@@ -388,25 +388,25 @@ func TestCompleteLoginConsumesTransactionBeforeIssuingSession(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: focused auth testを実行して失敗を確認する**
+- [x] **Step 2: focused auth testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/auth -count=1`
 
 期待結果: authentication/session packageが存在しないためFAIL。
 
-- [ ] **Step 3: OIDCとsessionの境界を実装する**
+- [x] **Step 3: OIDCとsessionの境界を実装する**
 
 `oidc.NewProvider`、1個の長寿命`Provider.VerifierContext`、`oauth2.GenerateVerifier`、`oauth2.S256ChallengeOption`、`oidc.Nonce`、`oauth2.VerifierOption`を使用する。`crypto/rand`でstate、nonce、verifier、transaction cookie、session cookie、CSRF tokenを生成する。保存するPKCE verifierだけを設定済み32 byte鍵のAES-GCMで暗号化し、cookie/CSRF tokenは保存前にSHA-256でhashする。`SessionStore.IssueCSRFToken`で保存済みCSRF token hashを原子的に置換し、生tokenは`GET /api/v1/session`にだけ返す。生tokenを永続化・log出力してはならない。token検証後にのみ`iss`と`sub`を照合し、明示的repository methodを通じてMemberに対応付ける。
 
 productionでは、`Secure`、`HttpOnly`、`SameSite=Lax`、`Path=/`、Domainなしの`__Host-approval_flow_session` cookieを発行する。configurationがloopback HTTPを許可する場合だけ、開発用の別cookie名を使用する。識別できたtransaction recordは、callbackの成功・失敗にかかわらず削除または失効させる。
 
-- [ ] **Step 4: authentication/session testを実行する**
+- [x] **Step 4: authentication/session testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/auth ./internal/store/postgres -run 'Test(CompleteLogin|Session|Csrf)' -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
 期待結果: PASS。
 
-- [ ] **Step 5: このタスクのファイルをcommitする**
+- [x] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add internal/auth internal/store/postgres/sessions.go internal/store/postgres/sessions_test.go
@@ -429,7 +429,7 @@ git commit -m "feat: add OIDC login and opaque sessions"
 - 提供: `GET /auth/oidc/login`、`GET /auth/oidc/callback`、`GET /auth/oidc/organization-selection`、`POST /auth/oidc/organization-selection`、`GET /api/v1/session`、`POST /api/v1/session/logout`を持つ`http.Handler`。複数Organization候補のcallbackは選択transaction cookieを発行し、選択成功後だけMember-bound sessionを発行する。
 - 提供: 型付きerrorをOpenAPIの`ErrorResponse`へmapする`WriteError(http.ResponseWriter, APIError)`。
 
-- [ ] **Step 1: 失敗するhandler testを書く**
+- [x] **Step 1: 失敗するhandler testを書く**
 
 正確なroute/methodの動作、login/callbackの302 LocationとSet-Cookie、欠落/期限切れsessionの401、CSRF tokenまたはOriginの欠落/不一致時の403 `csrf_validation_failed`、logout時の204とcookie削除、JSON/logにtoken/verifierがないことを確認する。
 
@@ -445,13 +445,13 @@ func TestLogoutRejectsMissingCSRFToken(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: HTTP auth/session testを実行して失敗を確認する**
+- [x] **Step 2: HTTP auth/session testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -run 'Test(Login|Callback|Session|Logout)' -count=1`
 
 期待結果: routerとhandlerが存在しないためFAIL。
 
-- [ ] **Step 3: routerとhandlerを実装する**
+- [x] **Step 3: routerとhandlerを実装する**
 
 method-aware `ServeMux` patternを登録する。authentication middlewareは不透明sessionを1回だけloadし、`application.Actor`だけを`request.Context`へ保存する。CSRF middlewareはunsafe `/api/v1` methodだけで実行し、正確な許可Originとsessionに束縛したheader tokenを必須とする。handlerは承認済みerror codeを使用し、queryで受け取ったreturn URLへredirectせず、設定済みlocal UI pathだけへredirectする。
 
@@ -462,13 +462,13 @@ mux.Handle("GET /api/v1/session", requireSession(currentSessionHandler))
 mux.Handle("POST /api/v1/session/logout", requireCSRF(requireSession(logoutHandler)))
 ```
 
-- [ ] **Step 4: HTTP auth/session testを実行する**
+- [x] **Step 4: HTTP auth/session testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -run 'Test(Login|Callback|Session|Logout)' -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
 期待結果: PASS。
 
-- [ ] **Step 5: このタスクのファイルをcommitする**
+- [x] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add cmd/api/main.go internal/httpapi
@@ -489,7 +489,7 @@ git commit -m "feat: expose OIDC and session HTTP endpoints"
 - 提供: 全`/api/v1/requests` operationとOpenAPI形式のJSON DTO。
 - 提供: Draft作成時の`201`とLocation、変更成功時の`200`、閲覧不可readの`404 request_not_found`、全failure modeのOpenAPI error response。
 
-- [ ] **Step 1: 失敗するHTTP contract testを書く**
+- [x] **Step 1: 失敗するHTTP contract testを書く**
 
 全OpenAPI operationに対して`httptest`を使うtestを書く。有効なRequester/Approver session、JSON decode error、field error、禁止mutation、閲覧不可read、古いversion、無効state、approval routing失敗、Audit Event snapshot fieldを含める。
 
@@ -505,23 +505,23 @@ func TestSubmitStaleVersionReturns409AndDoesNotCreateExtraAuditEvent(t *testing.
 }
 ```
 
-- [ ] **Step 2: Request handler testを実行して失敗を確認する**
+- [x] **Step 2: Request handler testを実行して失敗を確認する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -run 'Test(Create|Get|Update|Submit|Pending|Approve|Audit)' -count=1`
 
 期待結果: Request routeとDTO mappingが存在しないためFAIL。
 
-- [ ] **Step 3: decoder、DTO mapping、handlerを実装する**
+- [x] **Step 3: decoder、DTO mapping、handlerを実装する**
 
 `DisallowUnknownFields`を有効化した`json.Decoder`を使用し、trailing dataを拒否する。全unsafe Request operationから`expectedVersion`をdecodeする。`r.PathValue("requestId")`を使用し、未検証値をSQLへ連結しない。型付きapplication errorは一元的にmapする。無効inputは400、session欠落は401、禁止mutationは403、閲覧不可/not-found readは404、version/state/routing conflictは409とする。成功mutation後は現在のRequest/Approval DTOを返し、Audit Historyには並び替えたaudit eventを返す。
 
-- [ ] **Step 4: 全HTTP API testを実行する**
+- [x] **Step 4: 全HTTP API testを実行する**
 
 Run: `GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -count=1` (with an isolated `TEST_DATABASE_URL` exported)
 
 期待結果: PASS。
 
-- [ ] **Step 5: このタスクのファイルをcommitする**
+- [x] **Step 5: このタスクのファイルをcommitする**
 
 ```bash
 git add internal/httpapi/request_handlers.go internal/httpapi/request_handlers_test.go internal/httpapi/response_dto.go internal/httpapi/response_dto_test.go internal/httpapi/router.go
