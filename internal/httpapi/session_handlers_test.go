@@ -21,6 +21,7 @@ import (
 type fakeSessionStore struct {
 	authenticate func(context.Context, string, time.Time) (auth.AuthenticatedSession, error)
 	issue        func(context.Context, string, time.Time) (string, error)
+	validate     func(context.Context, string, string, time.Time) error
 	revoke       func(context.Context, string, time.Time) error
 }
 
@@ -32,6 +33,71 @@ func (f fakeSessionStore) IssueCSRFToken(ctx context.Context, id string, now tim
 }
 func (f fakeSessionStore) Revoke(ctx context.Context, cookie string, now time.Time) error {
 	return f.revoke(ctx, cookie, now)
+}
+
+func (f fakeSessionStore) ValidateCSRFToken(ctx context.Context, cookie, token string, now time.Time) error {
+	return f.validate(ctx, cookie, token, now)
+}
+
+func TestRequireCSRFRejectsTokenRotatedAfterAuthentication(t *testing.T) {
+	d := testDependencies()
+	currentToken := "old-token"
+	revoked := false
+	d.SessionStore = fakeSessionStore{
+		authenticate: func(context.Context, string, time.Time) (auth.AuthenticatedSession, error) {
+			return authenticatedSession(currentToken), nil
+		},
+		issue: func(context.Context, string, time.Time) (string, error) {
+			currentToken = "rotated-token"
+			return currentToken, nil
+		},
+		validate: func(_ context.Context, cookie, token string, now time.Time) error {
+			if cookie != "current-cookie-secret" || now != testNow {
+				return errors.New("validation lost the authenticated cookie or clock")
+			}
+			if token != currentToken {
+				return auth.ErrCSRFValidation
+			}
+			return nil
+		},
+		revoke: func(context.Context, string, time.Time) error { revoked = true; return nil },
+	}
+	router := &router{dependencies: d}
+	authenticated, resume, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	// Pause an unsafe request after authentication, while a concurrent GET
+	// successfully rotates its session's token. Channels make this order exact.
+	h := router.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(authenticated)
+		<-resume
+		router.RequireCSRF(http.HandlerFunc(router.logout)).ServeHTTP(w, r)
+	}))
+	r := sessionRequest(http.MethodPost, "/api/v1/session/logout", true)
+	r.Header.Set("Origin", allowedOrigin)
+	r.Header.Set("X-CSRF-Token", "old-token")
+	rr := httptest.NewRecorder()
+	go func() {
+		defer close(done)
+		h.ServeHTTP(rr, r)
+	}()
+	<-authenticated
+	rotation := httptest.NewRecorder()
+	NewRouter(d).ServeHTTP(rotation, sessionRequest(http.MethodGet, "/api/v1/session", true))
+	close(resume)
+	<-done
+	if rotation.Code != http.StatusOK {
+		t.Fatalf("rotation status = %d", rotation.Code)
+	}
+	assertError(t, rr, http.StatusForbidden, "csrf_validation_failed")
+	if revoked || len(rr.Result().Cookies()) != 0 {
+		t.Fatal("stale token revoked the session or cleared its cookie")
+	}
+
+	r.Header.Set("X-CSRF-Token", "rotated-token")
+	rr = httptest.NewRecorder()
+	NewRouter(d).ServeHTTP(rr, r)
+	if rr.Code != http.StatusNoContent || !revoked {
+		t.Fatalf("current token logout status = %d, revoked = %v", rr.Code, revoked)
+	}
 }
 
 func authenticatedSession(token string) auth.AuthenticatedSession {
@@ -137,6 +203,12 @@ func TestSessionReturnsActorAndRotatesCSRFToken(t *testing.T) {
 			session = authenticatedSession(token)
 			return token, nil
 		},
+		validate: func(_ context.Context, _ string, token string, _ time.Time) error {
+			if token != fmt.Sprintf("fresh-token-%d", issued) {
+				return auth.ErrCSRFValidation
+			}
+			return nil
+		},
 		revoke: func(context.Context, string, time.Time) error { revoked = true; return nil },
 	}
 	h := NewRouter(d)
@@ -213,6 +285,12 @@ func TestLogoutRejectsInvalidCSRFBeforeRevocation(t *testing.T) {
 					return authenticatedSession("current-token"), nil
 				},
 				revoke: func(context.Context, string, time.Time) error { t.Fatal("CSRF rejection invoked revoke"); return nil },
+				validate: func(_ context.Context, _ string, token string, _ time.Time) error {
+					if token != "current-token" {
+						return auth.ErrCSRFValidation
+					}
+					return nil
+				},
 			}
 			r := sessionRequest(http.MethodPost, "/api/v1/session/logout", true)
 			r.Header["Origin"] = tc.origins
@@ -238,6 +316,12 @@ func TestLogoutRevokesCurrentSessionAndClearsConfiguredCookie(t *testing.T) {
 			d.SessionStore = fakeSessionStore{
 				authenticate: func(context.Context, string, time.Time) (auth.AuthenticatedSession, error) {
 					return authenticatedSession("current-token"), nil
+				},
+				validate: func(gotCtx context.Context, cookie, token string, now time.Time) error {
+					if gotCtx.Err() != context.Canceled || cookie != "current-cookie-secret" || token != "current-token" || now != testNow {
+						t.Fatal("validation lost context, authenticated cookie, token, or clock")
+					}
+					return nil
 				},
 				revoke: func(gotCtx context.Context, cookie string, now time.Time) error {
 					calls++
@@ -270,7 +354,7 @@ func TestLogoutRevokesCurrentSessionAndClearsConfiguredCookie(t *testing.T) {
 }
 
 func TestSessionStoreErrorsAreSanitized(t *testing.T) {
-	for _, operation := range []string{"authenticate", "issue", "revoke"} {
+	for _, operation := range []string{"authenticate", "issue", "validate", "revoke"} {
 		for _, stale := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/stale=%v", operation, stale), func(t *testing.T) {
 				d := testDependencies()
@@ -287,11 +371,22 @@ func TestSessionStoreErrorsAreSanitized(t *testing.T) {
 						}
 						return authenticatedSession("token"), nil
 					},
-					issue:  func(context.Context, string, time.Time) (string, error) { return "", err },
-					revoke: func(context.Context, string, time.Time) error { return err },
+					issue: func(context.Context, string, time.Time) (string, error) { return "", err },
+					validate: func(context.Context, string, string, time.Time) error {
+						if operation == "validate" {
+							return err
+						}
+						return nil
+					},
+					revoke: func(context.Context, string, time.Time) error {
+						if operation == "validate" {
+							t.Fatal("failed validation invoked revocation")
+						}
+						return err
+					},
 				}
 				r := sessionRequest(http.MethodGet, "/api/v1/session", true)
-				if operation == "revoke" {
+				if operation == "revoke" || operation == "validate" {
 					r = sessionRequest(http.MethodPost, "/api/v1/session/logout", true)
 					r.Header.Set("Origin", allowedOrigin)
 					r.Header.Set("X-CSRF-Token", "token")

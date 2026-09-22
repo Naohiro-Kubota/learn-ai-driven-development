@@ -80,9 +80,33 @@ paths:
               schema:
                 type: string
         '400':
-          $ref: '#/components/responses/InvalidAuthTransaction'
+          description: Missing, invalid, expired, or previously consumed OIDC authentication transaction.
+          headers:
+            Set-Cookie:
+              description: Clears the authentication transaction cookie when a nonempty transaction cookie was supplied, including recognized callback failures. No cookie is cleared when the transaction cookie is missing or empty.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: invalid_auth_transaction
+                message: The sign-in request is no longer valid.
         '500':
-          $ref: '#/components/responses/InternalServerError'
+          description: Unexpected callback failure; the authentication transaction cookie is cleared.
+          headers:
+            Set-Cookie:
+              description: Clears the supplied authentication transaction cookie.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: internal_error
+                message: An unexpected error occurred.
   /auth/oidc/organization-selection:
     get:
       tags: [Authentication]
@@ -161,6 +185,11 @@ paths:
       tags: [Session]
       operationId: getCurrentSession
       summary: Get the current actor and a CSRF token
+      description: |
+        Each successful read rotates the session-bound CSRF token. Unsafe requests
+        validate against the active session's current stored token, ordered against
+        rotation and revocation; a token from an earlier read is rejected if a later
+        rotation completes before that validation.
       security:
         - sessionCookie: []
       responses:

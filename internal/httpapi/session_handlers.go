@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -59,9 +57,12 @@ func (r *router) RequireCSRF(next http.Handler) http.Handler {
 		}
 		value, ok := request.Context().Value(sessionContextKey{}).(authenticatedRequest)
 		token := singleHeader(request.Header, "X-CSRF-Token")
-		hash := sha256.Sum256([]byte(token))
-		if !ok || token == "" || subtle.ConstantTimeCompare(hash[:], value.session.CSRFTokenHash) != 1 {
+		if !ok || token == "" {
 			WriteError(w, APIError{http.StatusForbidden, "csrf_validation_failed"})
+			return
+		}
+		if err := r.dependencies.SessionStore.ValidateCSRFToken(request.Context(), value.cookie, token, r.dependencies.Now()); err != nil {
+			WriteError(w, sessionAPIError(err))
 			return
 		}
 		next.ServeHTTP(w, request)
@@ -104,6 +105,8 @@ func (r *router) logout(w http.ResponseWriter, request *http.Request) {
 
 func sessionAPIError(err error) APIError {
 	switch {
+	case errors.Is(err, auth.ErrCSRFValidation):
+		return APIError{http.StatusForbidden, "csrf_validation_failed"}
 	case errors.Is(err, auth.ErrNotFound), errors.Is(err, auth.ErrExpired), errors.Is(err, auth.ErrInvalidAuthentication):
 		return APIError{http.StatusUnauthorized, "authentication_required"}
 	default:
