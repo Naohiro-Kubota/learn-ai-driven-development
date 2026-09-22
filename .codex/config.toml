@@ -23,8 +23,12 @@ extends = ":workspace"
 
 [permissions.project-git-write.network]
 enabled = true
+allow_local_binding = true
 
 [permissions.project-git-write.network.domains]
+"localhost" = "allow"
+"127.0.0.1" = "allow"
+"::1" = "allow"
 "api.github.com" = "allow"
 "codeload.github.com" = "allow"
 "github.com" = "allow"
@@ -32,6 +36,9 @@ enabled = true
 "proxy.golang.org" = "allow"
 "registry.npmjs.org" = "allow"
 "sum.golang.org" = "allow"
+
+[permissions.project-git-write.network.unix_sockets]
+"/Users/nao/.rd/docker.sock" = "allow"
 
 # Deny Codex-issued Git/GitHub commands that mutate, switch to, or explicitly
 # target the protected main/develop branches. The hook's source is versioned
