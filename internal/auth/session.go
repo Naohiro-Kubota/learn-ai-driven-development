@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -8,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/domain"
 )
 
 const (
@@ -40,6 +43,92 @@ type Session struct {
 	ID, MemberID                                string
 	CreatedAt, IdleExpiresAt, AbsoluteExpiresAt time.Time
 }
+
+type Principal struct {
+	MemberID string
+	Roles    []domain.Role
+}
+
+type AuthenticatedSession struct {
+	ID            string
+	Principal     Principal
+	CSRFTokenHash []byte
+}
+
+type OrganizationSelectionCandidate struct {
+	MemberID, OrganizationID, OrganizationName string
+}
+
+type OrganizationSelection struct {
+	Candidates []OrganizationSelectionCandidate
+	CSRFToken  string
+}
+
+type SessionStore interface {
+	Authenticate(context.Context, string, time.Time) (AuthenticatedSession, error)
+	IssueCSRFToken(context.Context, string, time.Time) (string, error)
+	Revoke(context.Context, string, time.Time) error
+}
+
+type SelectionStore interface {
+	ReadAndIssueCSRFToken(context.Context, string, time.Time) (OrganizationSelection, error)
+	Complete(context.Context, CompleteOrganizationSelectionInput) (SessionInput, error)
+}
+
+// SelectionRepository is the persistence boundary used by SelectionService.
+// It intentionally accepts a generated SessionInput so that browser secrets
+// originate in the auth package rather than in the PostgreSQL adapter.
+type SelectionRepository interface {
+	ReadAndIssueCSRFToken(context.Context, string, time.Time) (OrganizationSelection, error)
+	CompleteOrganizationSelection(context.Context, CompleteOrganizationSelectionInput, SessionInput) error
+}
+
+type CompleteOrganizationSelectionInput struct {
+	Cookie, CSRFToken, MemberID string
+	Now                         time.Time
+}
+
+type SelectionService struct {
+	repository           SelectionRepository
+	idleTTL, absoluteTTL time.Duration
+}
+
+func NewSelectionService(repository SelectionRepository, idleTTL, absoluteTTL time.Duration) *SelectionService {
+	return &SelectionService{repository: repository, idleTTL: idleTTL, absoluteTTL: absoluteTTL}
+}
+
+func (s *SelectionService) ReadAndIssueCSRFToken(ctx context.Context, cookie string, now time.Time) (OrganizationSelection, error) {
+	return s.repository.ReadAndIssueCSRFToken(ctx, cookie, now)
+}
+
+func (s *SelectionService) Complete(ctx context.Context, input CompleteOrganizationSelectionInput) (SessionInput, error) {
+	cookie, err := oidcOpaque()
+	if err != nil {
+		return SessionInput{}, err
+	}
+	csrfToken, err := newCSRFToken()
+	if err != nil {
+		return SessionInput{}, err
+	}
+	id, err := oidcOpaque()
+	if err != nil {
+		return SessionInput{}, err
+	}
+	session := SessionInput{
+		ID:                id,
+		Cookie:            cookie,
+		CSRFToken:         csrfToken,
+		MemberID:          input.MemberID,
+		CreatedAt:         input.Now,
+		IdleExpiresAt:     input.Now.Add(s.idleTTL),
+		AbsoluteExpiresAt: input.Now.Add(s.absoluteTTL),
+	}
+	if err := s.repository.CompleteOrganizationSelection(ctx, input, session); err != nil {
+		return SessionInput{}, err
+	}
+	return session, nil
+}
+
 type AuthTransaction struct {
 	ID, Cookie, State, Nonce      string
 	EncryptedVerifier             []byte
@@ -84,4 +173,8 @@ func SessionCookie(value string, secure bool) *http.Cookie {
 		name = productionSessionCookieName
 	}
 	return &http.Cookie{Name: name, Value: value, Path: "/", Secure: secure, HttpOnly: true, SameSite: http.SameSiteLaxMode}
+}
+
+func newCSRFToken() (string, error) {
+	return oidcOpaque()
 }

@@ -2,12 +2,15 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"time"
 
 	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/auth"
+	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/domain"
 )
 
 func (r *Repository) MembersForIdentity(ctx context.Context, issuer, subject string) ([]string, error) {
@@ -117,16 +120,133 @@ func (r *Repository) AuthenticateSession(ctx context.Context, cookie string, now
 	return session, nil
 }
 
+func (r *Repository) Authenticate(ctx context.Context, cookie string, now time.Time) (auth.AuthenticatedSession, error) {
+	hash := sha256.Sum256([]byte(cookie))
+	var session auth.AuthenticatedSession
+	err := r.db.QueryRowContext(ctx, `SELECT id, member_id, csrf_token_hash FROM app_sessions WHERE cookie_hash = $1 AND revoked_at IS NULL AND idle_expires_at > $2 AND absolute_expires_at > $2`, hash[:], now).Scan(&session.ID, &session.Principal.MemberID, &session.CSRFTokenHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return auth.AuthenticatedSession{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.AuthenticatedSession{}, err
+	}
+	if _, err := r.db.ExecContext(ctx, `UPDATE app_sessions SET last_used_at = $1 WHERE id = $2`, now, session.ID); err != nil {
+		return auth.AuthenticatedSession{}, err
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT role FROM member_roles WHERE member_id = $1 ORDER BY role`, session.Principal.MemberID)
+	if err != nil {
+		return auth.AuthenticatedSession{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var role domain.Role
+		if err := rows.Scan(&role); err != nil {
+			return auth.AuthenticatedSession{}, err
+		}
+		session.Principal.Roles = append(session.Principal.Roles, role)
+	}
+	if err := rows.Err(); err != nil {
+		return auth.AuthenticatedSession{}, err
+	}
+	return session, nil
+}
+
+func (r *Repository) IssueCSRFToken(ctx context.Context, sessionID string, now time.Time) (string, error) {
+	token, err := csrfToken()
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256([]byte(token))
+	result, err := r.db.ExecContext(ctx, `UPDATE app_sessions SET csrf_token_hash = $1 WHERE id = $2 AND revoked_at IS NULL AND idle_expires_at > $3 AND absolute_expires_at > $3`, hash[:], sessionID, now)
+	if err != nil {
+		return "", err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if updated != 1 {
+		return "", auth.ErrNotFound
+	}
+	return token, nil
+}
+
 func (r *Repository) RevokeSession(ctx context.Context, cookie string, now time.Time) error {
 	hash := sha256.Sum256([]byte(cookie))
 	_, err := r.db.ExecContext(ctx, `UPDATE app_sessions SET revoked_at = $1 WHERE cookie_hash = $2 AND revoked_at IS NULL`, now, hash[:])
 	return err
 }
 
-func (r *Repository) ConsumeOrganizationSelection(ctx context.Context, input auth.ConsumeOrganizationSelectionInput) (auth.Session, error) {
+func (r *Repository) Revoke(ctx context.Context, cookie string, now time.Time) error {
+	return r.RevokeSession(ctx, cookie, now)
+}
+
+func (r *Repository) ReadAndIssueCSRFToken(ctx context.Context, cookie string, now time.Time) (auth.OrganizationSelection, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return auth.Session{}, err
+		return auth.OrganizationSelection{}, err
+	}
+	defer tx.Rollback()
+	hash := sha256.Sum256([]byte(cookie))
+	var id string
+	var expiresAt time.Time
+	var consumedAt sql.NullTime
+	err = tx.QueryRowContext(ctx, `SELECT id, expires_at, consumed_at FROM organization_selection_transactions WHERE cookie_hash = $1 FOR UPDATE`, hash[:]).Scan(&id, &expiresAt, &consumedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return auth.OrganizationSelection{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.OrganizationSelection{}, err
+	}
+	if consumedAt.Valid {
+		return auth.OrganizationSelection{}, auth.ErrConsumed
+	}
+	if !expiresAt.After(now) {
+		return auth.OrganizationSelection{}, auth.ErrExpired
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT m.id, o.id, o.name FROM organization_selection_transaction_members stm JOIN members m ON m.id = stm.member_id JOIN organizations o ON o.id = m.organization_id WHERE stm.transaction_id = $1 ORDER BY m.id`, id)
+	if err != nil {
+		return auth.OrganizationSelection{}, err
+	}
+	defer rows.Close()
+	selection := auth.OrganizationSelection{}
+	for rows.Next() {
+		var candidate auth.OrganizationSelectionCandidate
+		if err := rows.Scan(&candidate.MemberID, &candidate.OrganizationID, &candidate.OrganizationName); err != nil {
+			return auth.OrganizationSelection{}, err
+		}
+		selection.Candidates = append(selection.Candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return auth.OrganizationSelection{}, err
+	}
+	token, err := csrfToken()
+	if err != nil {
+		return auth.OrganizationSelection{}, err
+	}
+	tokenHash := sha256.Sum256([]byte(token))
+	if _, err := tx.ExecContext(ctx, `UPDATE organization_selection_transactions SET csrf_token_hash = $1 WHERE id = $2`, tokenHash[:], id); err != nil {
+		return auth.OrganizationSelection{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return auth.OrganizationSelection{}, err
+	}
+	selection.CSRFToken = token
+	return selection, nil
+}
+
+func csrfToken() (string, error) {
+	value := make([]byte, 32)
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(value), nil
+}
+
+func (r *Repository) CompleteOrganizationSelection(ctx context.Context, input auth.CompleteOrganizationSelectionInput, session auth.SessionInput) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
 	defer tx.Rollback()
 	ch, csrf := sha256.Sum256([]byte(input.Cookie)), sha256.Sum256([]byte(input.CSRFToken))
@@ -135,56 +255,64 @@ func (r *Repository) ConsumeOrganizationSelection(ctx context.Context, input aut
 	var consumed sql.NullTime
 	err = tx.QueryRowContext(ctx, `SELECT id, expires_at, consumed_at FROM organization_selection_transactions WHERE cookie_hash = $1 FOR UPDATE`, ch[:]).Scan(&id, &expires, &consumed)
 	if errors.Is(err, sql.ErrNoRows) {
-		return auth.Session{}, auth.ErrNotFound
+		return auth.ErrNotFound
 	}
 	if err != nil {
-		return auth.Session{}, err
+		return err
 	}
-	_, _ = tx.ExecContext(ctx, `UPDATE organization_selection_transactions SET consumed_at = $1 WHERE id = $2 AND consumed_at IS NULL`, input.Now, id)
 	if consumed.Valid {
-		return auth.Session{}, auth.ErrConsumed
+		return auth.ErrConsumed
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE organization_selection_transactions SET consumed_at = $1 WHERE id = $2`, input.Now, id); err != nil {
+		return err
 	}
 	if !expires.After(input.Now) {
 		if err := tx.Commit(); err != nil {
-			return auth.Session{}, err
+			return err
 		}
-		return auth.Session{}, auth.ErrExpired
+		return auth.ErrExpired
 	}
 	var storedCSRF []byte
 	if err := tx.QueryRowContext(ctx, `SELECT csrf_token_hash FROM organization_selection_transactions WHERE id = $1`, id).Scan(&storedCSRF); err != nil {
-		return auth.Session{}, err
+		return err
 	}
 	if !equalBytes(storedCSRF, csrf[:]) {
 		if err := tx.Commit(); err != nil {
-			return auth.Session{}, err
+			return err
 		}
-		return auth.Session{}, auth.ErrForbidden
+		return auth.ErrForbidden
 	}
 	var candidate bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM organization_selection_transaction_members WHERE transaction_id = $1 AND member_id = $2)`, id, input.MemberID).Scan(&candidate); err != nil {
-		return auth.Session{}, err
+		return err
 	}
 	if !candidate {
 		if err := tx.Commit(); err != nil {
-			return auth.Session{}, err
+			return err
 		}
-		return auth.Session{}, auth.ErrForbidden
+		return auth.ErrForbidden
 	}
-	s := input.Session
-	if s.MemberID != input.MemberID {
+	if session.MemberID != input.MemberID {
 		if err := tx.Commit(); err != nil {
-			return auth.Session{}, err
+			return err
 		}
-		return auth.Session{}, auth.ErrForbidden
+		return auth.ErrForbidden
 	}
-	cookieHash, csrfHash := sha256.Sum256([]byte(s.Cookie)), sha256.Sum256([]byte(s.CSRFToken))
-	if _, err := tx.ExecContext(ctx, `INSERT INTO app_sessions (id,cookie_hash,member_id,csrf_token_hash,created_at,last_used_at,idle_expires_at,absolute_expires_at) VALUES ($1,$2,$3,$4,$5,$5,$6,$7)`, s.ID, cookieHash[:], s.MemberID, csrfHash[:], s.CreatedAt, s.IdleExpiresAt, s.AbsoluteExpiresAt); err != nil {
-		return auth.Session{}, err
+	cookieHash, csrfHash := sha256.Sum256([]byte(session.Cookie)), sha256.Sum256([]byte(session.CSRFToken))
+	if _, err := tx.ExecContext(ctx, `INSERT INTO app_sessions (id,cookie_hash,member_id,csrf_token_hash,created_at,last_used_at,idle_expires_at,absolute_expires_at) VALUES ($1,$2,$3,$4,$5,$5,$6,$7)`, session.ID, cookieHash[:], session.MemberID, csrfHash[:], session.CreatedAt, session.IdleExpiresAt, session.AbsoluteExpiresAt); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *Repository) ConsumeOrganizationSelection(ctx context.Context, input auth.ConsumeOrganizationSelectionInput) (auth.Session, error) {
+	if err := r.CompleteOrganizationSelection(ctx, auth.CompleteOrganizationSelectionInput{Cookie: input.Cookie, CSRFToken: input.CSRFToken, MemberID: input.MemberID, Now: input.Now}, input.Session); err != nil {
 		return auth.Session{}, err
 	}
-	return auth.Session{ID: s.ID, MemberID: s.MemberID, CreatedAt: s.CreatedAt, IdleExpiresAt: s.IdleExpiresAt, AbsoluteExpiresAt: s.AbsoluteExpiresAt}, nil
+	return auth.Session{ID: input.Session.ID, MemberID: input.Session.MemberID, CreatedAt: input.Session.CreatedAt, IdleExpiresAt: input.Session.IdleExpiresAt, AbsoluteExpiresAt: input.Session.AbsoluteExpiresAt}, nil
 }
 
 func equalBytes(a, b []byte) bool {

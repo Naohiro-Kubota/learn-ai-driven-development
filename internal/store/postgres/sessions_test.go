@@ -2,12 +2,143 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/auth"
+	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/domain"
 )
+
+func TestSessionPrincipalIsReadFromMemberRoles(t *testing.T) {
+	db := openWorkflowTestDatabase(t)
+	if _, err := db.Exec(`TRUNCATE app_sessions, member_roles, members, organizations RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO organizations (id, name) VALUES ('org-1', 'One'); INSERT INTO members (id, organization_id, oidc_subject) VALUES ('member-1', 'org-1', 'subject-1'); INSERT INTO member_roles (member_id, role) VALUES ('member-1', 'requester'), ('member-1', 'approver')`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.September, 22, 9, 0, 0, 0, time.UTC)
+	r := NewRepository(db)
+	if err := r.CreateSession(context.Background(), auth.SessionInput{ID: "session-1", Cookie: "session-cookie", CSRFToken: "csrf", MemberID: "member-1", CreatedAt: now, IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(2 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := r.Authenticate(context.Background(), "session-cookie", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.ID != "session-1" || session.Principal.MemberID != "member-1" {
+		t.Fatalf("session = %#v", session)
+	}
+	if len(session.Principal.Roles) != 2 || session.Principal.Roles[0] != domain.RoleApprover || session.Principal.Roles[1] != domain.RoleRequester {
+		t.Fatalf("roles = %#v", session.Principal.Roles)
+	}
+}
+
+func TestIssueCSRFTokenReplacesStoredHash(t *testing.T) {
+	db := openWorkflowTestDatabase(t)
+	if _, err := db.Exec(`TRUNCATE app_sessions, member_roles, members, organizations RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO organizations (id, name) VALUES ('org-1', 'One'); INSERT INTO members (id, organization_id, oidc_subject) VALUES ('member-1', 'org-1', 'subject-1')`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.September, 22, 9, 0, 0, 0, time.UTC)
+	r := NewRepository(db)
+	if err := r.CreateSession(context.Background(), auth.SessionInput{ID: "session-1", Cookie: "session-cookie", CSRFToken: "initial-csrf", MemberID: "member-1", CreatedAt: now, IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(2 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := r.IssueCSRFToken(context.Background(), "session-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := r.IssueCSRFToken(context.Background(), "session-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("CSRF token was reused")
+	}
+	assertSessionCSRFHash(t, db, "session-1", sha256.Sum256([]byte(second)))
+}
+
+func TestOrganizationSelectionReadAndIssueCSRFTokenReturnsSnapshot(t *testing.T) {
+	db := openWorkflowTestDatabase(t)
+	if _, err := db.Exec(`TRUNCATE organization_selection_transaction_members, organization_selection_transactions, member_oidc_identities, oidc_identities, app_sessions, member_roles, members, organizations RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO organizations (id, name) VALUES ('org-1', 'One'), ('org-2', 'Two'); INSERT INTO members (id, organization_id, oidc_subject) VALUES ('member-1', 'org-1', 'subject-1'), ('member-2', 'org-2', 'subject-2'); INSERT INTO oidc_identities (id, issuer, subject) VALUES ('identity-1', 'https://issuer.example', 'subject'); INSERT INTO member_oidc_identities (identity_id, member_id) VALUES ('identity-1', 'member-1'), ('identity-1', 'member-2')`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.September, 22, 9, 0, 0, 0, time.UTC)
+	r := NewRepository(db)
+	if err := r.CreateOrganizationSelection(context.Background(), auth.OrganizationSelectionInput{ID: "selection-1", Cookie: "selection-cookie", CSRFToken: "initial-csrf", IdentityID: "identity-1", MemberIDs: []string{"member-1", "member-2"}, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+
+	selection, err := r.ReadAndIssueCSRFToken(context.Background(), "selection-cookie", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selection.Candidates) != 2 || selection.Candidates[0] != (auth.OrganizationSelectionCandidate{MemberID: "member-1", OrganizationID: "org-1", OrganizationName: "One"}) || selection.Candidates[1] != (auth.OrganizationSelectionCandidate{MemberID: "member-2", OrganizationID: "org-2", OrganizationName: "Two"}) {
+		t.Fatalf("candidates = %#v", selection.Candidates)
+	}
+	if selection.CSRFToken == "" {
+		t.Fatal("selection CSRF token is empty")
+	}
+	assertSelectionCSRFHash(t, db, "selection-1", sha256.Sum256([]byte(selection.CSRFToken)))
+}
+
+func TestOrganizationSelectionCompletionCreatesSession(t *testing.T) {
+	db := openWorkflowTestDatabase(t)
+	if _, err := db.Exec(`TRUNCATE organization_selection_transaction_members, organization_selection_transactions, member_oidc_identities, oidc_identities, app_sessions, member_roles, members, organizations RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO organizations (id, name) VALUES ('org-1', 'One'); INSERT INTO members (id, organization_id, oidc_subject) VALUES ('member-1', 'org-1', 'subject-1'); INSERT INTO oidc_identities (id, issuer, subject) VALUES ('identity-1', 'https://issuer.example', 'subject'); INSERT INTO member_oidc_identities (identity_id, member_id) VALUES ('identity-1', 'member-1')`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.September, 22, 9, 0, 0, 0, time.UTC)
+	r := NewRepository(db)
+	if err := r.CreateOrganizationSelection(context.Background(), auth.OrganizationSelectionInput{ID: "selection-1", Cookie: "selection-cookie", CSRFToken: "selection-csrf", IdentityID: "identity-1", MemberIDs: []string{"member-1"}, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	sessionInput := auth.SessionInput{ID: "session-1", Cookie: "session-cookie", CSRFToken: "session-csrf", MemberID: "member-1", CreatedAt: now, IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(2 * time.Hour)}
+
+	if err := r.CompleteOrganizationSelection(context.Background(), auth.CompleteOrganizationSelectionInput{Cookie: "selection-cookie", CSRFToken: "selection-csrf", MemberID: "member-1", Now: now}, sessionInput); err != nil {
+		t.Fatal(err)
+	}
+	assertSessionCSRFHash(t, db, "session-1", sha256.Sum256([]byte("session-csrf")))
+	var consumedAt time.Time
+	if err := db.QueryRow(`SELECT consumed_at FROM organization_selection_transactions WHERE id = 'selection-1'`).Scan(&consumedAt); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertSessionCSRFHash(t *testing.T, db interface{ QueryRow(string, ...any) *sql.Row }, sessionID string, want [sha256.Size]byte) {
+	t.Helper()
+	var got []byte
+	if err := db.QueryRow(`SELECT csrf_token_hash FROM app_sessions WHERE id = $1`, sessionID).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want[:]) {
+		t.Fatalf("CSRF hash = %x, want %x", got, want)
+	}
+}
+
+func assertSelectionCSRFHash(t *testing.T, db interface{ QueryRow(string, ...any) *sql.Row }, selectionID string, want [sha256.Size]byte) {
+	t.Helper()
+	var got []byte
+	if err := db.QueryRow(`SELECT csrf_token_hash FROM organization_selection_transactions WHERE id = $1`, selectionID).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want[:]) {
+		t.Fatalf("CSRF hash = %x, want %x", got, want)
+	}
+}
 
 func TestMembersForIdentityReturnsMembershipsAcrossOrganizations(t *testing.T) {
 	db := openWorkflowTestDatabase(t)
