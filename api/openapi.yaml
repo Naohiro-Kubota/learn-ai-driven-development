@@ -83,7 +83,7 @@ paths:
           description: Missing, invalid, expired, or previously consumed OIDC authentication transaction.
           headers:
             Set-Cookie:
-              description: Clears the authentication transaction cookie when a nonempty transaction cookie was supplied, including recognized callback failures. No cookie is cleared when the transaction cookie is missing or empty.
+              description: Clears the authentication transaction cookie when exactly one cookie with the configured transaction-cookie name is supplied and its value is nonempty, including recognized callback failures. Missing, empty, or duplicate named transaction cookies are rejected before any cookie is cleared.
               schema:
                 type: string
           content:
@@ -94,10 +94,10 @@ paths:
                 code: invalid_auth_transaction
                 message: The sign-in request is no longer valid.
         '500':
-          description: Unexpected callback failure; the authentication transaction cookie is cleared.
+          description: Unexpected callback failure after accepting exactly one named, nonempty authentication transaction cookie; that cookie is cleared.
           headers:
             Set-Cookie:
-              description: Clears the supplied authentication transaction cookie.
+              description: Clears the authentication transaction cookie accepted as the sole cookie with the configured transaction-cookie name and a nonempty value.
               schema:
                 type: string
           content:
