@@ -109,3 +109,27 @@ func TestRequestAPIErrorMapsDomainErrorsAndHidesWrappedDetails(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteErrorUsesDocumentedRequestMessages(t *testing.T) {
+	for _, tc := range []struct {
+		code, message string
+	}{
+		{"request_not_found", "Request was not found."},
+		{"version_conflict", "Request changed. Retrieve the latest state before retrying."},
+		{"invalid_state", "This operation is not valid for the current Request state."},
+		{"approval_routing_unavailable", "A default Approver cannot be assigned."},
+	} {
+		rr := httptest.NewRecorder()
+		WriteError(rr, APIError{Status: http.StatusConflict, Code: tc.code})
+		var body struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Code != tc.code || body.Message != tc.message {
+			t.Errorf("WriteError(%s) = %#v, want code/message %q/%q", tc.code, body, tc.code, tc.message)
+		}
+	}
+}
