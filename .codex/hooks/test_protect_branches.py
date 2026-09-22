@@ -59,6 +59,9 @@ class ProtectBranchesTest(unittest.TestCase):
         self.assertEqual(
             result["hookSpecificOutput"]["permissionDecision"], "deny")
 
+    def test_allows_pull_request_with_protected_base(self) -> None:
+        self.assertIsNone(invoke("gh pr create --base develop --head feature/example", "feature/example"))
+
     def test_denies_github_pull_request_merge_with_unknown_base(self) -> None:
         result = invoke("gh pr merge 123 --merge", "feature/example")
 
