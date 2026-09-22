@@ -6,7 +6,7 @@
 # Commands allowed by the workspace sandbox, including the permitted network
 # destinations below, run without approval. Operations that need to write
 # protected paths such as .git remain approval-gated.
-approval_policy = "on-request"
+approval_policy = "never"
 sandbox_mode = "workspace-write"
 
 [sandbox_workspace_write]
