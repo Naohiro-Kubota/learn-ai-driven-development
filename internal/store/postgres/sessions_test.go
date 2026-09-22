@@ -30,7 +30,7 @@ func TestSessionPrincipalIsReadFromMemberRoles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if session.ID != "session-1" || session.Principal.MemberID != "member-1" {
+	if session.ID != "session-1" || session.Principal.MemberID != "member-1" || session.Principal.OrganizationID != "org-1" {
 		t.Fatalf("session = %#v", session)
 	}
 	if len(session.Principal.Roles) != 2 || session.Principal.Roles[0] != domain.RoleApprover || session.Principal.Roles[1] != domain.RoleRequester {

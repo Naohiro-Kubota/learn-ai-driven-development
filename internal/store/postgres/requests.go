@@ -57,7 +57,7 @@ func (r *Repository) Get(ctx context.Context, requestID string) (domain.Request,
 	return getRequest(ctx, r.db, requestID)
 }
 
-func (r *Repository) GetApproval(ctx context.Context, requestID string) (domain.Approval, error) {
+func (r *Repository) GetApproval(ctx context.Context, requestID string) (*domain.Approval, error) {
 	return getApproval(ctx, r.db, requestID)
 }
 
@@ -150,6 +150,7 @@ func (r *Repository) Submit(ctx context.Context, command apprequests.SubmitComma
 		VALUES ($1, $2, $3, 'pending')`, approvalID, command.RequestID, command.AssigneeMemberID); err != nil {
 		return domain.Request{}, err
 	}
+	command.AuditEvent.ApprovalMetadata = &domain.ApprovalMetadata{AssigneeMemberID: command.AssigneeMemberID, ApprovalID: approvalID}
 	if err := insertAuditEvent(ctx, transaction, command.AuditEvent, command.RequestID); err != nil {
 		return domain.Request{}, err
 	}
@@ -202,6 +203,7 @@ func (r *Repository) Approve(ctx context.Context, command apprequests.ApproveCom
 	if rows != 1 {
 		return domain.Request{}, domain.ErrInvalidState
 	}
+	command.AuditEvent.ApprovalMetadata = &domain.ApprovalMetadata{AssigneeMemberID: command.AssigneeMemberID, ApprovalID: approval.ID}
 	if err := insertAuditEvent(ctx, transaction, command.AuditEvent, command.RequestID); err != nil {
 		return domain.Request{}, err
 	}
@@ -242,7 +244,7 @@ func (r *Repository) ListPending(ctx context.Context, assigneeMemberID string) (
 
 func (r *Repository) ListAuditEvents(ctx context.Context, requestID string) ([]domain.AuditEvent, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT request_id, actor_member_id, event_type, occurred_at, COALESCE(content_snapshot, '{}'::jsonb)
+		SELECT id, request_id, actor_member_id, event_type, occurred_at, content_snapshot, approval_metadata
 		FROM audit_events WHERE request_id = $1 ORDER BY occurred_at, id`, requestID)
 	if err != nil {
 		return nil, err
@@ -251,12 +253,21 @@ func (r *Repository) ListAuditEvents(ctx context.Context, requestID string) ([]d
 	events := make([]domain.AuditEvent, 0)
 	for rows.Next() {
 		var event domain.AuditEvent
-		var snapshot []byte
-		if err := rows.Scan(&event.RequestID, &event.ActorMemberID, &event.Type, &event.OccurredAt, &snapshot); err != nil {
+		var snapshot, metadata []byte
+		if err := rows.Scan(&event.ID, &event.RequestID, &event.ActorMemberID, &event.Type, &event.OccurredAt, &snapshot, &metadata); err != nil {
 			return nil, err
 		}
-		if err := json.Unmarshal(snapshot, &event.ContentSnapshot); err != nil {
-			return nil, err
+		if snapshot != nil {
+			event.ContentSnapshot = &domain.ContentSnapshot{}
+			if err := json.Unmarshal(snapshot, event.ContentSnapshot); err != nil {
+				return nil, err
+			}
+		}
+		if metadata != nil {
+			event.ApprovalMetadata = &domain.ApprovalMetadata{}
+			if err := json.Unmarshal(metadata, event.ApprovalMetadata); err != nil {
+				return nil, err
+			}
 		}
 		events = append(events, event)
 	}
@@ -280,15 +291,18 @@ func getRequest(ctx context.Context, queryer sqlQueryer, requestID string) (doma
 	return request, err
 }
 
-func getApproval(ctx context.Context, queryer sqlQueryer, requestID string) (domain.Approval, error) {
+func getApproval(ctx context.Context, queryer sqlQueryer, requestID string) (*domain.Approval, error) {
 	var approval domain.Approval
 	err := queryer.QueryRowContext(ctx, `
-		SELECT request_id, assignee_id, status, approved_at FROM approvals WHERE request_id = $1`, requestID).
-		Scan(&approval.RequestID, &approval.AssigneeMemberID, &approval.Status, &approval.ApprovedAt)
+		SELECT id, request_id, assignee_id, status, approved_at FROM approvals WHERE request_id = $1`, requestID).
+		Scan(&approval.ID, &approval.RequestID, &approval.AssigneeMemberID, &approval.Status, &approval.ApprovedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.Approval{}, domain.ErrNotFound
+		return nil, domain.ErrNotFound
 	}
-	return approval, err
+	if err != nil {
+		return nil, err
+	}
+	return &approval, nil
 }
 
 func defaultApprover(ctx context.Context, queryer sqlQueryer, organizationID string) (domain.DefaultApprover, error) {
@@ -339,18 +353,29 @@ func requireConditionalUpdate(ctx context.Context, transaction *sql.Tx, result s
 }
 
 func insertAuditEvent(ctx context.Context, transaction *sql.Tx, event domain.AuditEvent, requestID string) error {
-	snapshot, err := json.Marshal(event.ContentSnapshot)
-	if err != nil {
-		return err
+	var snapshot, metadata any
+	if event.ContentSnapshot != nil {
+		encoded, err := json.Marshal(event.ContentSnapshot)
+		if err != nil {
+			return err
+		}
+		snapshot = encoded
+	}
+	if event.ApprovalMetadata != nil {
+		encoded, err := json.Marshal(event.ApprovalMetadata)
+		if err != nil {
+			return err
+		}
+		metadata = encoded
 	}
 	id, err := newOpaqueID()
 	if err != nil {
 		return err
 	}
 	_, err = transaction.ExecContext(ctx, `
-		INSERT INTO audit_events (id, request_id, actor_member_id, event_type, occurred_at, content_snapshot)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		id, requestID, event.ActorMemberID, event.Type, event.OccurredAt, snapshot)
+		INSERT INTO audit_events (id, request_id, actor_member_id, event_type, occurred_at, content_snapshot, approval_metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		id, requestID, event.ActorMemberID, event.Type, event.OccurredAt, snapshot, metadata)
 	return err
 }
 

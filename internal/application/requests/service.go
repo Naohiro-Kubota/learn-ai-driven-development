@@ -15,8 +15,9 @@ const (
 )
 
 type Actor struct {
-	MemberID string
-	Roles    []domain.Role
+	MemberID       string
+	OrganizationID string
+	Roles          []domain.Role
 }
 type Service struct {
 	repository Repository
@@ -128,6 +129,20 @@ func (s *Service) Get(ctx context.Context, actor Actor, requestID string) (domai
 	return domain.Request{}, domain.ErrNotFound
 }
 
+func (s *Service) GetApproval(ctx context.Context, actor Actor, requestID string) (*domain.Approval, error) {
+	if _, err := s.Get(ctx, actor, requestID); err != nil {
+		return nil, err
+	}
+	approval, err := s.repository.GetApproval(ctx, requestID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return approval, nil
+}
+
 func (s *Service) ListPending(ctx context.Context, actor Actor) ([]domain.Request, error) {
 	if !actor.hasRole(domain.RoleApprover) {
 		return nil, domain.ErrForbidden
@@ -158,5 +173,5 @@ func validateContent(title, description string) (string, error) {
 	return title, nil
 }
 func auditEvent(request domain.Request, actorID, eventType string, occurredAt time.Time) domain.AuditEvent {
-	return domain.AuditEvent{RequestID: request.ID, ActorMemberID: actorID, Type: eventType, OccurredAt: occurredAt, ContentSnapshot: domain.ContentSnapshot{Title: request.Title, Description: request.Description}}
+	return domain.AuditEvent{RequestID: request.ID, ActorMemberID: actorID, Type: eventType, OccurredAt: occurredAt, ContentSnapshot: &domain.ContentSnapshot{Title: request.Title, Description: request.Description}}
 }

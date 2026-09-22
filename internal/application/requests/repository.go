@@ -9,7 +9,7 @@ import (
 type Repository interface {
 	CreateDraft(context.Context, CreateDraftCommand) (domain.Request, error)
 	Get(context.Context, string) (domain.Request, error)
-	GetApproval(context.Context, string) (domain.Approval, error)
+	GetApproval(context.Context, string) (*domain.Approval, error)
 	UpdateDraft(context.Context, UpdateDraftCommand) (domain.Request, error)
 	DefaultApprover(context.Context, string) (domain.DefaultApprover, error)
 	Submit(context.Context, SubmitCommand) (domain.Request, error)

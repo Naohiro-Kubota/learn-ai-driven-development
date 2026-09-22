@@ -209,6 +209,45 @@ func TestGetAndListAuditEventsHideUnauthorizedRequests(t *testing.T) {
 	}
 }
 
+func TestGetApprovalUsesRequestVisibility(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		actor   Actor
+		wantID  string
+		wantErr error
+	}{
+		{name: "requester", actor: requester("requester"), wantID: "approval-1"},
+		{name: "assigned approver", actor: approver("approver"), wantID: "approval-1"},
+		{name: "visible draft has no approval", actor: requester("requester")},
+		{name: "other requester", actor: requester("other"), wantErr: domain.ErrNotFound},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			repo := newFakeRepository(pendingRequest())
+			service := NewService(repo)
+			requestID := "request-1"
+			if testCase.name == "visible draft has no approval" {
+				repo.requests[requestID] = draftRequest()
+			}
+			approval, err := service.GetApproval(context.Background(), testCase.actor, requestID)
+			if testCase.name == "visible draft has no approval" {
+				if err != nil || approval != nil {
+					t.Fatalf("GetApproval() = %#v, error = %v, want nil approval", approval, err)
+				}
+				return
+			}
+			if testCase.wantErr != nil {
+				if !errors.Is(err, testCase.wantErr) {
+					t.Fatalf("GetApproval() error = %v, want %v", err, testCase.wantErr)
+				}
+				return
+			}
+			if err != nil || approval == nil || approval.ID != testCase.wantID || approval.Status != domain.ApprovalStatusPending {
+				t.Fatalf("GetApproval() = %#v, error = %v", approval, err)
+			}
+		})
+	}
+}
+
 func TestListPendingReturnsOnlyAssignedApproverRequests(t *testing.T) {
 	repo := newFakeRepository(pendingRequest())
 	service := NewService(repo)
@@ -241,7 +280,7 @@ func assertAuditSnapshot(t *testing.T, events []domain.AuditEvent, eventType, ac
 		t.Fatalf("audit event count = %d, want 1", len(events))
 	}
 	event := events[0]
-	if event.Type != eventType || event.ActorMemberID != actorID || event.ContentSnapshot.Title != title || event.ContentSnapshot.Description != description {
+	if event.Type != eventType || event.ActorMemberID != actorID || event.ContentSnapshot == nil || event.ContentSnapshot.Title != title || event.ContentSnapshot.Description != description {
 		t.Errorf("audit event = %#v, want type %q actor %q snapshot (%q, %q)", event, eventType, actorID, title, description)
 	}
 }
@@ -260,7 +299,7 @@ func newFakeRepository(initial ...domain.Request) *fakeRepository {
 	for _, request := range initial {
 		repo.requests[request.ID] = request
 		if request.Status == domain.RequestStatusPending {
-			repo.approval = domain.Approval{RequestID: request.ID, AssigneeMemberID: "approver", Status: domain.ApprovalStatusPending}
+			repo.approval = domain.Approval{ID: "approval-1", RequestID: request.ID, AssigneeMemberID: "approver", Status: domain.ApprovalStatusPending}
 		}
 	}
 	return repo
@@ -281,11 +320,15 @@ func (r *fakeRepository) Get(_ context.Context, requestID string) (domain.Reques
 	}
 	return request, nil
 }
-func (r *fakeRepository) GetApproval(_ context.Context, requestID string) (domain.Approval, error) {
-	if r.approval.RequestID != requestID {
-		return domain.Approval{}, domain.ErrNotFound
+func (r *fakeRepository) GetApproval(_ context.Context, requestID string) (*domain.Approval, error) {
+	if request, ok := r.requests[requestID]; !ok || request.Status == domain.RequestStatusDraft {
+		return nil, domain.ErrNotFound
 	}
-	return r.approval, nil
+	if r.approval.RequestID != requestID {
+		return nil, domain.ErrNotFound
+	}
+	approval := r.approval
+	return &approval, nil
 }
 func (r *fakeRepository) UpdateDraft(_ context.Context, command UpdateDraftCommand) (domain.Request, error) {
 	request, ok := r.requests[command.Request.ID]

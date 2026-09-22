@@ -86,7 +86,7 @@ func newDraft(seed workflowSeed) domain.Request {
 }
 
 func newAuditEvent(request domain.Request, actorID, eventType string) domain.AuditEvent {
-	return domain.AuditEvent{RequestID: request.ID, ActorMemberID: actorID, Type: eventType, OccurredAt: request.UpdatedAt, ContentSnapshot: domain.ContentSnapshot{Title: request.Title, Description: request.Description}}
+	return domain.AuditEvent{RequestID: request.ID, ActorMemberID: actorID, Type: eventType, OccurredAt: request.UpdatedAt, ContentSnapshot: &domain.ContentSnapshot{Title: request.Title, Description: request.Description}}
 }
 
 func createDraftCommand(request domain.Request, actorID string) apprequests.CreateDraftCommand {
