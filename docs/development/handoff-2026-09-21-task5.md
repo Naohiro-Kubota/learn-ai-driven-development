@@ -130,5 +130,5 @@ Task 5 の完了前に、`.superpowers/sdd/2026-09-20-go-api-implementation/prog
 ## 後続Taskの前提・次のDecision
 
 - loginを有効化する前に、検証済みissuerを指定したprovisioningで`oidc_identities`と`member_oidc_identities`を作成する。管理用provisioning workflowは後続Taskで扱う。
-- `pnpm test` は既存のNode標準`node:test`とVitestの収集競合により失敗する。Task 5のscopeへ暗黙に含めず、必要なら別Taskとして修正する。
+- `pnpm test` のNode標準`node:test`とVitestの収集競合は解消済みである。`scripts/check-gofmt.test.mjs`はVitestへ移行済みであり、2026-09-22に`pnpm test`が1 file・2 testsの成功を確認した。
 - CSRF/origin middlewareとHTTP cookie発行はTask 6の範囲である。Task 5はcookie属性・token lifecycleを値オブジェクト／repository境界で検証するが、HTTP handlerを先取りしない。
