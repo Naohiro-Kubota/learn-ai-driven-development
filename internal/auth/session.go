@@ -69,6 +69,9 @@ type OrganizationSelection struct {
 type SessionStore interface {
 	Authenticate(context.Context, string, time.Time) (AuthenticatedSession, error)
 	IssueCSRFToken(context.Context, string, time.Time) (string, error)
+	// ValidateCSRFToken checks the active session's current token at the store
+	// boundary, ordered against token rotation and revocation.
+	ValidateCSRFToken(context.Context, string, string, time.Time) error
 	Revoke(context.Context, string, time.Time) error
 }
 

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"time"
@@ -173,6 +174,31 @@ func (r *Repository) RevokeSession(ctx context.Context, cookie string, now time.
 	hash := sha256.Sum256([]byte(cookie))
 	_, err := r.db.ExecContext(ctx, `UPDATE app_sessions SET revoked_at = $1 WHERE cookie_hash = $2 AND revoked_at IS NULL`, now, hash[:])
 	return err
+}
+
+// ValidateCSRFToken compares against the active database value, not the snapshot
+// obtained during authentication. The shared row lock orders this comparison
+// against token rotation and revocation, and is held until comparison completes.
+func (r *Repository) ValidateCSRFToken(ctx context.Context, cookie, token string, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	cookieHash := sha256.Sum256([]byte(cookie))
+	var storedHash []byte
+	err = tx.QueryRowContext(ctx, `SELECT csrf_token_hash FROM app_sessions WHERE cookie_hash = $1 AND revoked_at IS NULL AND idle_expires_at > $2 AND absolute_expires_at > $2 FOR SHARE`, cookieHash[:], now).Scan(&storedHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return auth.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	tokenHash := sha256.Sum256([]byte(token))
+	if subtle.ConstantTimeCompare(storedHash, tokenHash[:]) != 1 {
+		return auth.ErrCSRFValidation
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) Revoke(ctx context.Context, cookie string, now time.Time) error {
