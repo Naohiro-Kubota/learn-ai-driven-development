@@ -75,14 +75,14 @@ func TestCreateRequestUsesAuthenticatedActorAndReturnsLocation(t *testing.T) {
 }
 
 func TestRequestMutationRejectsStrictJSONAndExpectedVersionBeforeService(t *testing.T) {
-	for _, body := range []string{"", `{"title":"VPN"} {}`, `{"title":"VPN","unknown":true}`, `{"expectedVersion":0}`, `{"expectedVersion":1} trailing"`} {
+	for _, body := range []string{"", `{"title":"VPN"} {}`, `{"title":"VPN","description":"d","expectedVersion":1,"unknown":true}`, `{"title":"VPN","description":"d","expectedVersion":1,"expectedVersion":2}`, `{"title":"VPN","expectedVersion":0}`, `{"title":"VPN","description":"d","expectedVersion":1} trailing"`} {
 		t.Run(body, func(t *testing.T) {
 			called := false
 			d := requestTestDependencies()
 			d.RequestService = &requestServiceFake{update: func(context.Context, requests.Actor, string, int64, string, string) (domain.Request, error) {
 				called = true
 				return domain.Request{}, nil
-			}}
+			}, approval: func(context.Context, requests.Actor, string) (*domain.Approval, error) { return nil, nil }}
 			r := httptest.NewRequest(http.MethodPatch, "/api/v1/requests/req", strings.NewReader(body))
 			r.AddCookie(auth.SessionCookie("cookie", true))
 			r.Header.Set("Origin", allowedOrigin)
@@ -93,6 +93,46 @@ func TestRequestMutationRejectsStrictJSONAndExpectedVersionBeforeService(t *test
 				t.Fatalf("status=%d called=%v body=%s", rr.Code, called, rr.Body.String())
 			}
 		})
+	}
+}
+
+func TestUpdateRequiresDescriptionAndDocumentedApprovalAuditPaths(t *testing.T) {
+	called := false
+	d := requestTestDependencies()
+	d.RequestService = &requestServiceFake{
+		update: func(context.Context, requests.Actor, string, int64, string, string) (domain.Request, error) {
+			called = true
+			return domain.Request{}, nil
+		},
+		approve: func(context.Context, requests.Actor, string, int64) (domain.Request, error) {
+			called = true
+			return domain.Request{}, nil
+		},
+		audit: func(context.Context, requests.Actor, string) ([]domain.AuditEvent, error) {
+			called = true
+			return nil, nil
+		},
+		approval: func(context.Context, requests.Actor, string) (*domain.Approval, error) { return nil, nil },
+	}
+	patch := httptest.NewRequest(http.MethodPatch, "/api/v1/requests/req", strings.NewReader(`{"title":"new","expectedVersion":1}`))
+	patch.AddCookie(auth.SessionCookie("cookie", true))
+	patch.Header.Set("Origin", allowedOrigin)
+	patch.Header.Set("X-CSRF-Token", "token")
+	rr := httptest.NewRecorder()
+	NewRouter(d).ServeHTTP(rr, patch)
+	if rr.Code != http.StatusBadRequest || called {
+		t.Fatalf("patch status=%d called=%v", rr.Code, called)
+	}
+	for _, path := range []string{"/api/v1/requests/req/approvals", "/api/v1/requests/req/audit-events"} {
+		r := httptest.NewRequest(map[string]string{"/api/v1/requests/req/approvals": http.MethodPost, "/api/v1/requests/req/audit-events": http.MethodGet}[path], path, strings.NewReader(`{"expectedVersion":1}`))
+		r.AddCookie(auth.SessionCookie("cookie", true))
+		r.Header.Set("Origin", allowedOrigin)
+		r.Header.Set("X-CSRF-Token", "token")
+		rr = httptest.NewRecorder()
+		NewRouter(d).ServeHTTP(rr, r)
+		if rr.Code == http.StatusNotFound {
+			t.Fatalf("documented route not registered: %s", path)
+		}
 	}
 }
 
@@ -124,6 +164,93 @@ func TestRequestGetDoesNotRequireCSRFAndPendingEnrichesEveryEntry(t *testing.T) 
 	NewRouter(d).ServeHTTP(rr, pending)
 	if rr.Code != http.StatusOK || approvalCalls != 3 || !strings.Contains(rr.Body.String(), `"id":"approval-one"`) || !strings.Contains(rr.Body.String(), `"id":"approval-two"`) {
 		t.Fatalf("pending status=%d calls=%d body=%s", rr.Code, approvalCalls, rr.Body.String())
+	}
+}
+
+func TestRequestMutationsRequireSessionAndCSRFBeforeService(t *testing.T) {
+	paths := []struct{ method, path, body string }{
+		{http.MethodPost, "/api/v1/requests", `{"title":"T"}`},
+		{http.MethodPatch, "/api/v1/requests/r", `{"title":"T","description":"D","expectedVersion":1}`},
+		{http.MethodPost, "/api/v1/requests/r/submit", `{"expectedVersion":1}`},
+		{http.MethodPost, "/api/v1/requests/r/approvals", `{"expectedVersion":1}`},
+	}
+	for _, endpoint := range paths {
+		t.Run(endpoint.method+endpoint.path, func(t *testing.T) {
+			calls := 0
+			d := requestTestDependencies()
+			d.RequestService = &requestServiceFake{create: func(context.Context, requests.Actor, string, string, string) (domain.Request, error) {
+				calls++
+				return domain.Request{}, nil
+			}, update: func(context.Context, requests.Actor, string, int64, string, string) (domain.Request, error) {
+				calls++
+				return domain.Request{}, nil
+			}, submit: func(context.Context, requests.Actor, string, int64) (domain.Request, error) {
+				calls++
+				return domain.Request{}, nil
+			}, approve: func(context.Context, requests.Actor, string, int64) (domain.Request, error) {
+				calls++
+				return domain.Request{}, nil
+			}}
+			r := httptest.NewRequest(endpoint.method, endpoint.path, strings.NewReader(endpoint.body))
+			r.AddCookie(auth.SessionCookie("cookie", true))
+			r.Header.Set("Origin", "https://other.example")
+			r.Header.Set("X-CSRF-Token", "token")
+			rr := httptest.NewRecorder()
+			NewRouter(d).ServeHTTP(rr, r)
+			if rr.Code != http.StatusForbidden || calls != 0 {
+				t.Fatalf("status=%d calls=%d", rr.Code, calls)
+			}
+		})
+	}
+}
+
+func TestRequestServiceErrorsMapToDocumentedResponses(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{"forbidden", domain.ErrForbidden, http.StatusForbidden, "forbidden"},
+		{"not found", domain.ErrNotFound, http.StatusNotFound, "request_not_found"},
+		{"version", domain.ErrVersionConflict, http.StatusConflict, "version_conflict"},
+		{"state", domain.ErrInvalidState, http.StatusConflict, "invalid_state"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := requestTestDependencies()
+			d.RequestService = &requestServiceFake{get: func(context.Context, requests.Actor, string) (domain.Request, error) { return domain.Request{}, tc.err }, approval: func(context.Context, requests.Actor, string) (*domain.Approval, error) { return nil, nil }}
+			r := httptest.NewRequest(http.MethodGet, "/api/v1/requests/r", nil)
+			r.AddCookie(auth.SessionCookie("cookie", true))
+			rr := httptest.NewRecorder()
+			NewRouter(d).ServeHTTP(rr, r)
+			if rr.Code != tc.status || !strings.Contains(rr.Body.String(), `"code":"`+tc.code+`"`) {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+		})
+	}
+}
+
+func TestStaleSubmitReturnsConflictWithoutAuditOrApprovalRead(t *testing.T) {
+	auditWrites, approvalReads := 0, 0
+	d := requestTestDependencies()
+	d.RequestService = &requestServiceFake{
+		submit: func(context.Context, requests.Actor, string, int64) (domain.Request, error) {
+			auditWrites++
+			return domain.Request{}, domain.ErrVersionConflict
+		},
+		approval: func(context.Context, requests.Actor, string) (*domain.Approval, error) {
+			approvalReads++
+			return nil, nil
+		},
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/requests/r/submit", strings.NewReader(`{"expectedVersion":1}`))
+	r.AddCookie(auth.SessionCookie("cookie", true))
+	r.Header.Set("Origin", allowedOrigin)
+	r.Header.Set("X-CSRF-Token", "token")
+	rr := httptest.NewRecorder()
+	NewRouter(d).ServeHTTP(rr, r)
+	if rr.Code != http.StatusConflict || auditWrites != 1 || approvalReads != 0 {
+		t.Fatalf("status=%d audit=%d approval=%d", rr.Code, auditWrites, approvalReads)
 	}
 }
 

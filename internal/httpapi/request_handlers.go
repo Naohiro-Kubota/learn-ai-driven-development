@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,11 +21,60 @@ func (r *router) requestActor(w http.ResponseWriter, request *http.Request) (req
 	return actor, true
 }
 
-func decodeJSONBody(w http.ResponseWriter, request *http.Request, dst any) error {
+func decodeJSONBody(w http.ResponseWriter, request *http.Request, dst any, required ...string) error {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, request.Body, 64<<10))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(dst); err != nil {
+	var object map[string]json.RawMessage
+	if err := decodeStrictObject(decoder, &object); err != nil {
 		return err
+	}
+	for _, field := range required {
+		if _, ok := object[field]; !ok {
+			return errors.New("required field missing")
+		}
+	}
+	encoded, err := json.Marshal(object)
+	if err != nil {
+		return err
+	}
+	valueDecoder := json.NewDecoder(bytes.NewReader(encoded))
+	valueDecoder.DisallowUnknownFields()
+	return valueDecoder.Decode(dst)
+}
+
+func decodeStrictObject(decoder *json.Decoder, object *map[string]json.RawMessage) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok || delim != '{' {
+		return errors.New("JSON body must be an object")
+	}
+	values := make(map[string]json.RawMessage)
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return errors.New("invalid JSON property")
+		}
+		if _, exists := values[key]; exists {
+			return errors.New("duplicate JSON property")
+		}
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return err
+		}
+		values[key] = raw
+	}
+	end, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if delim, ok := end.(json.Delim); !ok || delim != '}' {
+		return errors.New("JSON body is incomplete")
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
@@ -33,6 +83,7 @@ func decodeJSONBody(w http.ResponseWriter, request *http.Request, dst any) error
 		}
 		return err
 	}
+	*object = values
 	return nil
 }
 
@@ -58,7 +109,7 @@ func (r *router) createRequest(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	var input createRequestInput
-	if err := decodeJSONBody(w, request, &input); err != nil {
+	if err := decodeJSONBody(w, request, &input, "title"); err != nil {
 		WriteError(w, APIError{Status: http.StatusBadRequest, Code: "invalid_request"})
 		return
 	}
@@ -98,7 +149,7 @@ func (r *router) updateRequest(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	var input updateDraftRequestInput
-	if err := decodeJSONBody(w, request, &input); err != nil || input.ExpectedVersion < 1 {
+	if err := decodeJSONBody(w, request, &input, "title", "description", "expectedVersion"); err != nil || input.ExpectedVersion < 1 {
 		WriteError(w, APIError{Status: http.StatusBadRequest, Code: "invalid_request"})
 		return
 	}
@@ -127,7 +178,7 @@ func (r *router) mutateRequest(w http.ResponseWriter, request *http.Request, ope
 		return
 	}
 	var input expectedVersionInput
-	if err := decodeJSONBody(w, request, &input); err != nil || input.ExpectedVersion < 1 {
+	if err := decodeJSONBody(w, request, &input, "expectedVersion"); err != nil || input.ExpectedVersion < 1 {
 		WriteError(w, APIError{Status: http.StatusBadRequest, Code: "invalid_request"})
 		return
 	}

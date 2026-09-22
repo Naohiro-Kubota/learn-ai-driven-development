@@ -57,8 +57,8 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	mux.Handle("GET /api/v1/requests/{requestId}", r.RequireSession(http.HandlerFunc(r.getRequest)))
 	mux.Handle("PATCH /api/v1/requests/{requestId}", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.updateRequest))))
 	mux.Handle("POST /api/v1/requests/{requestId}/submit", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.submitRequest))))
-	mux.Handle("POST /api/v1/requests/{requestId}/approve", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.approveRequest))))
-	mux.Handle("GET /api/v1/requests/{requestId}/audit", r.RequireSession(http.HandlerFunc(r.listAuditEvents)))
+	mux.Handle("POST /api/v1/requests/{requestId}/approvals", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.approveRequest))))
+	mux.Handle("GET /api/v1/requests/{requestId}/audit-events", r.RequireSession(http.HandlerFunc(r.listAuditEvents)))
 	return mux
 }
 
