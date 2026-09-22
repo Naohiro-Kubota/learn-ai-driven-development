@@ -54,3 +54,44 @@ FAIL (missing TEST_DATABASE_URL)
 ## Commit
 
 Filled after commit: `d4ec3789236344a27fdb857a2fb38343858a09ce`
+
+## Review fix round 1
+
+### Changes
+
+- `internal/httpapi/session_handlers.go` now copies the authenticated Principal's server-derived `OrganizationID` into `requests.Actor`; the HTTP test asserts this remains authoritative despite forged request values.
+- `internal/application/requests/service.go` rejects a missing or mismatched actor organization with `domain.ErrNotFound` before requester, approver, or admin visibility checks. This constrains Admin `Get`, `GetApproval`, and `ListAuditEvents` to the same organization.
+- Focused tests were added/updated in `internal/httpapi/session_handlers_test.go` and `internal/application/requests/service_test.go`.
+
+### TDD evidence
+
+RED before production changes:
+
+```text
+go test ./internal/httpapi -run 'TestRequireSessionUsesOnlyServerActorAndPropagatesContext' -count=1
+FAIL: actor OrganizationID was empty
+
+go test ./internal/application/requests -run 'TestAdminCannotReadAnotherOrganizationRequestApprovalOrAudit' -count=1
+FAIL: Get/GetApproval/ListAuditEvents returned nil error for cross-organization admin
+```
+
+GREEN after the minimal fixes:
+
+```text
+GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/httpapi -run 'TestRequireSessionUsesOnlyServerActorAndPropagatesContext' -count=1
+ok
+
+GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/application/requests -run 'Test(GetApproval|AdminCannotReadAnotherOrganizationRequestApprovalOrAudit|CreateDraft)' -count=1
+ok
+
+GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/auth ./internal/application/requests ./internal/httpapi -count=1
+ok
+
+GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go vet ./internal/auth ./internal/application/requests ./internal/httpapi
+ok
+
+git diff --check
+ok
+```
+
+Review-fix commit: `66c89dae8c6721c90a0f76d056d336de704336ff`
