@@ -237,21 +237,46 @@ func TestRequestMutationsRequireSessionAndCSRFBeforeService(t *testing.T) {
 
 func TestRequestServiceErrorsMapToDocumentedResponses(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		err    error
-		status int
-		code   string
+		name, method, path string
+		err                error
+		status             int
+		code               string
 	}{
-		{"forbidden", domain.ErrForbidden, http.StatusForbidden, "forbidden"},
-		{"not found", domain.ErrNotFound, http.StatusNotFound, "request_not_found"},
-		{"version", domain.ErrVersionConflict, http.StatusConflict, "version_conflict"},
-		{"state", domain.ErrInvalidState, http.StatusConflict, "invalid_state"},
+		{"patch forbidden", http.MethodPatch, "/api/v1/requests/r", domain.ErrForbidden, http.StatusForbidden, "forbidden"},
+		{"patch not found", http.MethodPatch, "/api/v1/requests/r", domain.ErrNotFound, http.StatusNotFound, "request_not_found"},
+		{"patch version", http.MethodPatch, "/api/v1/requests/r", domain.ErrVersionConflict, http.StatusConflict, "version_conflict"},
+		{"patch state", http.MethodPatch, "/api/v1/requests/r", domain.ErrInvalidState, http.StatusConflict, "invalid_state"},
+		{"submit forbidden", http.MethodPost, "/api/v1/requests/r/submit", domain.ErrForbidden, http.StatusForbidden, "forbidden"},
+		{"submit not found", http.MethodPost, "/api/v1/requests/r/submit", domain.ErrNotFound, http.StatusNotFound, "request_not_found"},
+		{"submit version", http.MethodPost, "/api/v1/requests/r/submit", domain.ErrVersionConflict, http.StatusConflict, "version_conflict"},
+		{"submit state", http.MethodPost, "/api/v1/requests/r/submit", domain.ErrInvalidState, http.StatusConflict, "invalid_state"},
+		{"submit routing", http.MethodPost, "/api/v1/requests/r/submit", domain.ErrApprovalRoutingUnavailable, http.StatusConflict, "approval_routing_unavailable"},
+		{"approve forbidden", http.MethodPost, "/api/v1/requests/r/approvals", domain.ErrForbidden, http.StatusForbidden, "forbidden"},
+		{"approve not found", http.MethodPost, "/api/v1/requests/r/approvals", domain.ErrNotFound, http.StatusNotFound, "request_not_found"},
+		{"approve version", http.MethodPost, "/api/v1/requests/r/approvals", domain.ErrVersionConflict, http.StatusConflict, "version_conflict"},
+		{"approve state", http.MethodPost, "/api/v1/requests/r/approvals", domain.ErrInvalidState, http.StatusConflict, "invalid_state"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := requestTestDependencies()
-			d.RequestService = &requestServiceFake{get: func(context.Context, requests.Actor, string) (domain.Request, error) { return domain.Request{}, tc.err }, approval: func(context.Context, requests.Actor, string) (*domain.Approval, error) { return nil, nil }}
-			r := httptest.NewRequest(http.MethodGet, "/api/v1/requests/r", nil)
+			d.RequestService = &requestServiceFake{
+				update: func(context.Context, requests.Actor, string, int64, string, string) (domain.Request, error) {
+					return domain.Request{}, tc.err
+				},
+				submit: func(context.Context, requests.Actor, string, int64) (domain.Request, error) {
+					return domain.Request{}, tc.err
+				},
+				approve: func(context.Context, requests.Actor, string, int64) (domain.Request, error) {
+					return domain.Request{}, tc.err
+				},
+			}
+			body := `{"title":"T","description":"D","expectedVersion":1}`
+			if tc.method != http.MethodPatch {
+				body = `{"expectedVersion":1}`
+			}
+			r := httptest.NewRequest(tc.method, tc.path, strings.NewReader(body))
 			r.AddCookie(auth.SessionCookie("cookie", true))
+			r.Header.Set("Origin", allowedOrigin)
+			r.Header.Set("X-CSRF-Token", "token")
 			rr := httptest.NewRecorder()
 			NewRouter(d).ServeHTTP(rr, r)
 			if rr.Code != tc.status || !strings.Contains(rr.Body.String(), `"code":"`+tc.code+`"`) {
