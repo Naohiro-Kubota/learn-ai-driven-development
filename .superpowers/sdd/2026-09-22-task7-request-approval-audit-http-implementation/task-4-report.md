@@ -34,3 +34,12 @@ Task 4 の完了条件を達成した。初回検証で判明したテストの�
 ## Commit
 
 関連コミット: `3a4d7d37612959f4d1f2a7e2e44363432cb3d67c`（completion evidence とテスト修正）。この報告書の更新コミットSHAはコミット後に追記する。
+
+## Review follow-up
+
+- P1対応: `request_created`、`request_submitted`、`request_approved` の完全な集合を検証し、欠落・重複・余分なイベント種別を失敗にするテストへ更新した。
+- P2対応: completion evidence に FR-001/002/003/004/005/007/011/013 と NFR-001/002/003、および対象外IDを追記した。
+- `TEST_DATABASE_URL=... GOTOOLCHAIN=go1.27.1 go test ./internal/store/postgres -run TestApprovalAndAuditReadModelPreservesOpaqueIDsAndMetadata -count=10`: PASS。
+- `GOCACHE=/private/tmp/learn-ai-go-cache pnpm run test:db`: PASS。
+- 隔離 `TEST_DATABASE_URL` 付き `go test ./internal/application/requests ./internal/store/postgres ./internal/httpapi ./cmd/api -count=1`: PASS。
+- `pnpm install --frozen-lockfile`、format、lint、typecheck、gofmt、`go vet ./...`、`go mod verify`、`git diff --check`: すべてPASS。

@@ -31,6 +31,10 @@ Request/Approval/Audit の server-derived read model、OpenAPI DTO/error mapping
 
 実装は ADR-002、ADR-003、ADR-005、ADR-011、ADR-013、および PDR-001、PDR-002 に依拠する。今回、新しい Product Decision / ADR は不要だった。browser E2E は実施していない。
 
+## Requirement traceability
+
+対応した Requirement ID は FR-001、FR-002、FR-003、FR-004、FR-005、FR-007、FR-011、FR-013、NFR-001、NFR-002、NFR-003。FR-006、FR-008、FR-009、FR-010、FR-012、NFR-004、NFR-005、NFR-006 は今回のTask 7の対象外。
+
 ## 検証結果
 
 - `source /Users/nao/.nvm/nvm.sh; nvm use 26.9.0; GOCACHE=/private/tmp/learn-ai-go-cache pnpm run test:db`: PASS。リポジトリの `compose.test.yaml` による一時 PostgreSQL と `TEST_DATABASE_URL` を使用し、終了後に破棄。
