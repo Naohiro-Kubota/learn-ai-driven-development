@@ -67,6 +67,9 @@ func decodeStrictObject(decoder *json.Decoder, object *map[string]json.RawMessag
 		if err := decoder.Decode(&raw); err != nil {
 			return err
 		}
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return errors.New("null JSON property")
+		}
 		values[key] = raw
 	}
 	end, err := decoder.Token()
