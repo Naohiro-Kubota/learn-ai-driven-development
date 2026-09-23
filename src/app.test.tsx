@@ -64,9 +64,14 @@ describe("App session bootstrap", () => {
 		);
 		await screen.findByRole("heading", { name: "First" });
 		expect(getRequest).toHaveBeenCalledWith("a/b");
+		window.history.replaceState(null, "", "/?requestId=prior");
+		fireEvent.popState(window);
+		await act(async () => {
+			expect(getRequest).toHaveBeenCalledWith("prior");
+		});
 		window.history.replaceState(null, "", "/?requestId=..");
 		fireEvent.popState(window);
-		expect(getRequest).toHaveBeenCalledTimes(1);
+		expect(getRequest).toHaveBeenCalledTimes(2);
 	});
 	it("loads organization choices on the selection path without bootstrapping a session", async () => {
 		window.history.replaceState(null, "", "/organization-selection");

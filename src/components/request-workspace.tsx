@@ -64,6 +64,7 @@ export function RequestWorkspace({
 	const [editErrors, setEditErrors] = useState<FieldError[]>([]);
 	const [pending, setPending] = useState(false);
 	const [read, setRead] = useState<ReadState>({ kind: "empty" });
+	const [auditReadFailed, setAuditReadFailed] = useState(false);
 	const generation = useRef(0);
 	const validId =
 		requestId && requestId !== "." && requestId !== ".." ? requestId : null;
@@ -71,6 +72,7 @@ export function RequestWorkspace({
 	const load = useCallback(
 		(id: string) => {
 			const current = ++generation.current;
+			setAuditReadFailed(false);
 			setRead({ kind: "loading" });
 			Promise.all([client.getRequest(id), client.listAuditEvents(id)]).then(
 				([request, events]) => {
@@ -104,11 +106,15 @@ export function RequestWorkspace({
 	): void {
 		if (error instanceof ApiError && error.body.fieldErrors?.length)
 			setErrors(error.body.fieldErrors);
-		else
+		else {
+			const knownFailure = error instanceof ApiError;
 			onNotice({
-				code: error instanceof ApiError ? error.body.code : "transport_failure",
-				text: "The request could not be saved. Please try again.",
+				code: knownFailure ? error.body.code : "transport_failure",
+				text: knownFailure
+					? "The request was not saved. Review the error before continuing."
+					: "Could not confirm the request outcome. Check request details before taking another action.",
 			});
+		}
 	}
 
 	function create(): void {
@@ -140,6 +146,7 @@ export function RequestWorkspace({
 		setEditErrors(errors);
 		if (errors.length || pending) return;
 		setPending(true);
+		const currentGeneration = generation.current;
 		client
 			.updateRequest(
 				validId,
@@ -152,20 +159,31 @@ export function RequestWorkspace({
 			)
 			.then(
 				(request) => {
+					if (generation.current !== currentGeneration) return;
 					setRead((current) =>
 						current.kind === "ready" && current.request.id === request.id
 							? { ...current, request }
 							: current,
 					);
-					client
-						.listAuditEvents(request.id)
-						.then((events) =>
+					client.listAuditEvents(request.id).then(
+						(events) => {
+							if (generation.current !== currentGeneration) return;
+							setAuditReadFailed(false);
 							setRead((current) =>
 								current.kind === "ready" && current.request.id === request.id
 									? { ...current, events }
 									: current,
-							),
-						);
+							);
+						},
+						() => {
+							if (generation.current !== currentGeneration) return;
+							setAuditReadFailed(true);
+							onNotice({
+								code: "transport_failure",
+								text: "Could not refresh audit history. Retry the read to see current events.",
+							});
+						},
+					);
 				},
 				(error: unknown) => handleError(error, setEditErrors),
 			)
@@ -205,6 +223,19 @@ export function RequestWorkspace({
 			)}
 			{read.kind === "ready" && (
 				<>
+					{auditReadFailed && (
+						<div role="alert">
+							<p>Audit history may be out of date.</p>
+							<button
+								type="button"
+								onClick={() => {
+									if (validId) load(validId);
+								}}
+							>
+								Retry read
+							</button>
+						</div>
+					)}
 					<RequestDetail
 						request={read.request}
 						actor={session.actor}
