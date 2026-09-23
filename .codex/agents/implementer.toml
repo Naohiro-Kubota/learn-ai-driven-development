@@ -1,6 +1,6 @@
 name = "implementer"
 description = "実装・テストを担当するエージェント。"
-model = "gpt-5.6-luna"
+model = "gpt-6-sol"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 
