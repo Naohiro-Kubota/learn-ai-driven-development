@@ -34,7 +34,7 @@ OpenAPIのserver URLは`/`とする。OIDC browser handoffはresource APIでは�
 
 ## Representation and concurrency
 
-`Request`、`Approval`、`AuditEvent`は内部tableを表現しないDTOである。IDは不透明な文字列、日時はRFC 3339 `date-time`、`version`は1以上の整数とする。
+`Request`、`Approval`、`AuditEvent`は内部tableを表現しないDTOである。IDは不透明な文字列、日時はRFC 3339 `date-time`、`version`は1以上の整数とする。URLのpath segmentとなる`requestId`は空文字列および正確に`.`または`..`の値を認めない。後二者はブラウザやrouterのpath正規化で別のendpointを指し得るためであり、その他の不透明なIDは許容する。
 
 全ての状態変更とDraft更新はbody内の`expectedVersion`を必須とする。現在versionまたは状態と合わない場合は`409`と`version_conflict`または`invalid_state`を返す。ネットワーク障害で結果不明になったクライアントは再送せず、`GET /api/v1/requests/{requestId}`で最新状態を取得する。初回Sliceでは`Idempotency-Key`を使用しない。
 

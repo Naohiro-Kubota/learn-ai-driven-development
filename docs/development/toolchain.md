@@ -2,7 +2,7 @@
 
 Status: Accepted ADR configuration
 
-この文書は、Accepted ADR-001、ADR-002、ADR-004、ADR-006、ADR-007、ADR-009、ADR-010、ADR-012に基づく初回Sliceの再現可能なtoolchain基準です。versionは2026-09-21時点の最新安定版として固定します。更新は依存関係ポリシーとADR-007のレビュー手順に従って行います。
+この文書は、Accepted ADR-001、ADR-002、ADR-004、ADR-006、ADR-007、ADR-009、ADR-010、ADR-012、ADR-015に基づく初回Sliceの再現可能なtoolchain基準です。versionは2026-09-21時点の最新安定版として固定します。更新は依存関係ポリシーとADR-007のレビュー手順に従って行います。
 
 ## Toolchain
 
@@ -42,3 +42,19 @@ Go sourceはADR-012に従い`gofmt`でformatし、`go vet ./...`で静的解析�
 - Go moduleは`go.mod`と`go.sum`をコミットする。依存更新はGo module versionと間接依存の差分をレビューする。
 - Keycloak imageはtagだけで運用せず、provisioning時に対応するcontainer digestを記録する。development modeはローカル/E2E限定である。
 - PostgreSQL migration統合テストは`pnpm run test:db`を使用する。これは`compose.test.yaml`で一時的なPostgreSQL 17.11 containerを起動し、`TEST_DATABASE_URL`を注入してから、終了時にcontainerとvolumeを破棄する。
+
+## Frontend Task 2 の起動と検証
+
+Frontend は ADR-015 に従い API と異なる origin で起動する。loopback 開発例では API 側の `APP_FRONTEND_ORIGIN=http://127.0.0.1:5173` と、Frontend 側の `VITE_API_ORIGIN=http://127.0.0.1:8080` を対応させる。`VITE_API_ORIGIN` は絶対 HTTP(S) origin とし、path、query、fragment、userinfo は付けない。HTTP は loopback 開発のみ許す。
+
+```bash
+pnpm install --frozen-lockfile
+VITE_API_ORIGIN=http://127.0.0.1:8080 pnpm run dev --host 127.0.0.1
+pnpm test
+pnpm run typecheck
+pnpm run format:check
+pnpm run lint
+pnpm run build
+```
+
+この段階の画面は session bootstrap、Sign in、再試行表示までを提供する。Request と Organization 選択の操作画面は React Frontend 実装計画の Task 3、実ブラウザでの二者承認フローは Task 4 の範囲である。
