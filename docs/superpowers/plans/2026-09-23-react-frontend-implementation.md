@@ -40,6 +40,8 @@
 
 ### Task 1: Cross-origin API transportと固定Frontend redirectを追加する
 
+**完了（2026-09-23）:** [PR #21](https://github.com/Naohiro-Kubota/learn-ai-driven-development/pull/21)を`develop`へマージ済み。以下は実装前に書かれた当初計画で、主要な設定・CORS・redirectはTask 1着手時点ですでに存在していた。実際のred/green、差分、検証、レビューは[Task 1補完計画](2026-09-23-react-frontend-task1-completion.md)と[完了記録](../../development/react-frontend-task1-completion-2026-09-23.md)を正本とする。当初計画の未チェック項目はこの履歴を保つため変更しない。
+
 **ファイル:**
 - 作成: `internal/httpapi/cors.go`、`internal/httpapi/cors_test.go`
 - 変更: `internal/config/config.go`、`internal/config/config_test.go`、`internal/httpapi/router.go`、`internal/httpapi/auth_handlers.go`、`internal/httpapi/auth_handlers_test.go`、`cmd/api/main_test.go`、`api/openapi.yaml`、`docs/development/toolchain.md`
