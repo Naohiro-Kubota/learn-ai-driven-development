@@ -1,5 +1,7 @@
 # React Frontend Task 2 実装計画
 
+**Status: Completed (2026-09-23)。** 実装・検証・レビューの結果は [完了記録](../../development/react-frontend-task2-completion-2026-09-23.md) を参照。成果物は [PR #23](https://github.com/Naohiro-Kubota/learn-ai-driven-development/pull/23) に含めた。実装時は Git 保護フックと隔離コピーでの作業により、下記の Task ごとの commit を行わず、Task 2 全体を `194e615` の単一 commit にまとめた。RED 確認は Task 2.1 で `pnpm test -- src/config.test.ts`、Task 2.2/2.3 で `pnpm exec vitest run ...` を実行した。
+
 > **エージェント実行者向け:** 実装時は `superpowers:subagent-driven-development` または `superpowers:executing-plans` を使い、チェックボックス単位で進める。`AGENTS.md` 7.1 に従い、implementer に実装とテスト、reviewer に差分レビューを依頼する。
 
 **Goal:** OpenAPI と一致する型付き API client と、session を起点に表示を切り替える最小の React application shell を作る。
@@ -46,7 +48,7 @@
 
 **Interfaces:** `export function parseApiOrigin(value: string | undefined): URL` を提供する。成功時は path が `/` で query/fragment が空の URL。失敗時は設定名を示す Error。`main.tsx` はこの段階では loading 表示を render し、Task 2.3 で client と App を接続する。
 
-- [ ] **Step 1: 設定の失敗するテストを書く。** `src/config.test.ts` で `https://api.example.test` と `http://127.0.0.1:8080` を受け入れ、`undefined`, `""`, `"/api"`, `"https://u@api.example.test"`, `"https://api.example.test/path"`, `"https://api.example.test/?x=1"`, `"https://api.example.test/#x"`, `"http://api.example.test"` を拒否する。
+- [x] **Step 1: 設定の失敗するテストを書く。** `src/config.test.ts` で `https://api.example.test` と `http://127.0.0.1:8080` を受け入れ、`undefined`, `""`, `"/api"`, `"https://u@api.example.test"`, `"https://api.example.test/path"`, `"https://api.example.test/?x=1"`, `"https://api.example.test/#x"`, `"http://api.example.test"` を拒否する。
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -62,10 +64,10 @@ describe("parseApiOrigin", () => {
 });
 ```
 
-- [ ] **Step 2: `pnpm test -- src/config.test.ts` を実行し、module 未実装で FAIL を確認する。**
-- [ ] **Step 3: 設定と entry を実装する。** `new URL(value)` の前に空値と前後空白を拒否し、protocol は `https:`、または hostname が `localhost`/`127.0.0.1`/`[::1]` のときの `http:` だけ受け入れる。`username`、`password`、`pathname !== "/"`、`search`、`hash` を拒否する。`index.html` は `#root` を持ち `src/main.tsx` を module として読み込む。`main.tsx` はこの段階で `<main>Loading…</main>` だけを render する。`vite.config.ts` は `vitest/config` の `defineConfig` と React plugin を使い、`test.environment: "jsdom"` と `test.setupFiles: ["./src/test/setup.ts"]` を設定する。`setup.ts` は `@testing-library/jest-dom/vitest` を import する。`tsconfig.json` は `DOM`/`DOM.Iterable`、`jsx: "react-jsx"`、`types: ["vite/client", "vitest/globals"]` と必要な source/config file を含める。既存の `strict`, `moduleResolution: "bundler"`, `noEmit` を維持する。
-- [ ] **Step 4: `pnpm test -- src/config.test.ts` と `pnpm run typecheck` を実行し PASS を確認する。** 後続 Task 2.2/2.3 の未作成 import を entry に先行追加しない。
-- [ ] **Step 5: この task のファイルを commit する。** `git add index.html vite.config.ts tsconfig.json src/main.tsx src/config.ts src/config.test.ts src/test/setup.ts`、`git commit -m "feat: bootstrap React frontend configuration"`。
+- [x] **Step 2: `pnpm test -- src/config.test.ts` を実行し、module 未実装で FAIL を確認する。**
+- [x] **Step 3: 設定と entry を実装する。** `new URL(value)` の前に空値と前後空白を拒否し、protocol は `https:`、または hostname が `localhost`/`127.0.0.1`/`[::1]` のときの `http:` だけ受け入れる。`username`、`password`、`pathname !== "/"`、`search`、`hash` を拒否する。`index.html` は `#root` を持ち `src/main.tsx` を module として読み込む。`main.tsx` はこの段階で `<main>Loading…</main>` だけを render する。`vite.config.ts` は `vitest/config` の `defineConfig` と React plugin を使い、`test.environment: "jsdom"` と `test.setupFiles: ["./src/test/setup.ts"]` を設定する。`setup.ts` は `@testing-library/jest-dom/vitest` を import する。`tsconfig.json` は `DOM`/`DOM.Iterable`、`jsx: "react-jsx"`、`types: ["vite/client", "vitest/globals"]` と必要な source/config file を含める。既存の `strict`, `moduleResolution: "bundler"`, `noEmit` を維持する。
+- [x] **Step 4: `pnpm exec vitest run src/config.test.ts` と `pnpm run typecheck` を実行し PASS を確認する。** 後続 Task 2.2/2.3 の未作成 import を entry に先行追加しない。
+- [x] **Step 5: この task のファイルを Task 2 全体の commit に含める。** `index.html`、`vite.config.ts`、`tsconfig.json`、`src/main.tsx`、`src/config.ts`、`src/config.test.ts`、`src/test/setup.ts` を `194e615` に含めた。
 
 ### Task 2.2: OpenAPI DTO と credentialed API client
 
@@ -93,7 +95,7 @@ export function createApiClient(apiOrigin: URL, fetchFn: typeof fetch = fetch): 
 };
 ```
 
-- [ ] **Step 1: DTO と client の失敗するテストを書く。** `types.ts` は `Session`, `Actor`, `OrganizationSelection`, `CreateRequestInput`, `UpdateDraftRequestInput`, `Request`, `Approval`, `AuditEvent`, `ErrorResponse`, `FieldError` を `api/openapi.yaml` の required/optional/nullability に従って定義する。特に `Request.approval: Approval | null`、`AuditEvent.requestContent: {title: string; description: string} | null`、`ErrorResponse.fieldErrors?: FieldError[]`、`PendingRequestList.requests`、`AuditEventList.events` を守る。`client.test.ts` は全 11 method の HTTP method/path と成功 DTO、path segment の `encodeURIComponent(id)`、GET の header なし、mutation の JSON/CSRF/credentials、204、400 fieldErrors、401、403、409、非 JSON response、fetch rejection を表駆動で確認する。Organization 選択は `redirect: "manual"` と `opaqueredirect` 成功、通常の JSON error 応答を確認する。
+- [x] **Step 1: DTO と client の失敗するテストを書く。** `types.ts` は `Session`, `Actor`, `OrganizationSelection`, `CreateRequestInput`, `UpdateDraftRequestInput`, `Request`, `Approval`, `AuditEvent`, `ErrorResponse`, `FieldError` を `api/openapi.yaml` の required/optional/nullability に従って定義する。特に `Request.approval: Approval | null`、`AuditEvent.requestContent: {title: string; description: string} | null`、`ErrorResponse.fieldErrors?: FieldError[]`、`PendingRequestList.requests`、`AuditEventList.events` を守る。`client.test.ts` は全 11 method の HTTP method/path と成功 DTO、path segment の `encodeURIComponent(id)`、GET の header なし、mutation の JSON/CSRF/credentials、204、400 fieldErrors、401、403、409、非 JSON response、fetch rejection を表駆動で確認する。Organization 選択は `redirect: "manual"` と `opaqueredirect` 成功、通常の JSON error 応答を確認する。
 
 ```ts
 it("sends the current CSRF token on create", async () => {
@@ -107,10 +109,10 @@ it("sends the current CSRF token on create", async () => {
 });
 ```
 
-- [ ] **Step 2: `pnpm test -- src/api/client.test.ts` を実行し、DTO/client 未実装で FAIL を確認する。**
-- [ ] **Step 3: `types.ts` と client を実装する。** origin の `.origin` と定数 path から URL を作る。`id` は path segment として encode し、slash、`?`、`#` を path 構造へ混ぜない。private `request<T>` は全操作で `credentials: "include"`、unsafe operation で `X-CSRF-Token`、JSON body があるときだけ `Content-Type: application/json` を設定する。成功の 204 は body を読まず `void`、他の成功は JSON object を返す。`selectOrganization` だけ `redirect: "manual"` を指定し、`opaqueredirect` を成功として返す。HTTP error は JSON の `code`/`message` を検査して `ApiError(status, body)` を投げ、JSON でない response や malformed body は別の `TransportError`（固定の安全な文言）を投げる。fetch rejection はそのまま transport failure とし、mutation を自動再送しない。`listPending` は `.requests`、`listAuditEvents` は `.events` を返す。login は client method にせず `window.location.assign(new URL("/auth/oidc/login", apiOrigin))` で開始する。
-- [ ] **Step 4: `pnpm test -- src/api/client.test.ts`、`pnpm run typecheck`、`pnpm run format:check`、`pnpm run lint` を実行し PASS を確認する。**
-- [ ] **Step 5: この task のファイルを commit する。** `git add src/api`、`git commit -m "feat: add typed credentialed API client"`。
+- [x] **Step 2: `pnpm exec vitest run src/api/client.test.ts` を実行し、DTO/client 未実装で FAIL を確認する。**
+- [x] **Step 3: `types.ts` と client を実装する。** origin の `.origin` と定数 path から URL を作る。`id` は path segment として encode し、slash、`?`、`#` を path 構造へ混ぜない。private `request<T>` は全操作で `credentials: "include"`、unsafe operation で `X-CSRF-Token`、JSON body があるときだけ `Content-Type: application/json` を設定する。成功の 204 は body を読まず `void`、他の成功は JSON object を返す。`selectOrganization` だけ `redirect: "manual"` を指定し、`opaqueredirect` を成功として返す。HTTP error は JSON の `code`/`message` を検査して `ApiError(status, body)` を投げ、JSON でない response や malformed body は別の `TransportError`（固定の安全な文言）を投げる。fetch rejection はそのまま transport failure とし、mutation を自動再送しない。`listPending` は `.requests`、`listAuditEvents` は `.events` を返す。login は client method にせず `window.location.assign(new URL("/auth/oidc/login", apiOrigin))` で開始する。
+- [x] **Step 4: `pnpm exec vitest run src/api/client.test.ts`、`pnpm run typecheck`、`pnpm run format:check`、`pnpm run lint` を実行し PASS を確認する。**
+- [x] **Step 5: この task のファイルを Task 2 全体の commit に含める。** `src/api` を `194e615` に含めた。
 
 ### Task 2.3: Session bootstrap と最小 application shell
 
@@ -118,7 +120,7 @@ it("sends the current CSRF token on create", async () => {
 
 **Interfaces:** `export function App({ client, login }: { client: ApiClient; login: () => void }): ReactElement`。`main.tsx` は client と、固定 API login URL へ navigation する `login` callback を渡す。Task 3 は `App` の認証済み branch に画面を追加する。
 
-- [ ] **Step 1: shell の失敗するテストを書く。** `getSession` が未解決なら loading、成功なら認証済み shell、`ApiError(401, {code:"authentication_required", ...})` なら Sign in button、他の `ApiError`/network failure なら Retry buttonを確認する。Sign in は固定 `/auth/oidc/login` へ移り return URL を付けない。Retry は `getSession` を再実行する。遅い古い取得結果が新しい結果や unmount 後の state を上書きしないことを確認する。
+- [x] **Step 1: shell の失敗するテストを書く。** `getSession` が未解決なら loading、成功なら認証済み shell、`ApiError(401, {code:"authentication_required", ...})` なら Sign in button、他の `ApiError`/network failure なら Retry buttonを確認する。Sign in は固定 `/auth/oidc/login` へ移り return URL を付けない。Retry は `getSession` を再実行する。遅い古い取得結果が新しい結果や unmount 後の state を上書きしないことを確認する。
 
 ```tsx
 it("shows sign in after authentication_required", async () => {
@@ -130,10 +132,10 @@ it("shows sign in after authentication_required", async () => {
 });
 ```
 
-- [ ] **Step 2: `pnpm test -- src/app.test.tsx` を実行し、App 未実装で FAIL を確認する。**
-- [ ] **Step 3: 最小 shell を実装する。** `useEffect` で初回 `getSession` を起動し、cleanup で古い promise の反映を無効にする。state は `loading | authenticated(session) | unauthenticated | error` の判別可能 union にする。`ApiError.body.code === "authentication_required"` のときだけ unauthenticated、それ以外は generic error。session/CSRF はこの state 以外へ永続化・出力しない。authenticated branch には Task 3 の workspace を差し込める領域を置き、未実装の業務操作を表示しない。`main.tsx` で `createRoot(...).render(<App ... />)` を接続する。
-- [ ] **Step 4: `pnpm test -- src/config.test.ts src/api/client.test.ts src/app.test.tsx`、`pnpm run typecheck`、`pnpm run format:check`、`pnpm run lint`、`pnpm run build`、`git diff --check` を実行し PASS を確認する。** `dist/` は commit しない。
-- [ ] **Step 5: この task のファイルを commit する。** `git add src/app.tsx src/app.test.tsx src/main.tsx`、`git commit -m "feat: add session-driven application shell"`。
+- [x] **Step 2: `pnpm exec vitest run src/app.test.tsx` を実行し、App 未実装で FAIL を確認する。**
+- [x] **Step 3: 最小 shell を実装する。** `useEffect` で初回 `getSession` を起動し、cleanup で古い promise の反映を無効にする。state は `loading | authenticated(session) | unauthenticated | error` の判別可能 union にする。`ApiError.body.code === "authentication_required"` のときだけ unauthenticated、それ以外は generic error。session/CSRF はこの state 以外へ永続化・出力しない。authenticated branch には Task 3 の workspace を差し込める領域を置き、未実装の業務操作を表示しない。`main.tsx` で `createRoot(...).render(<App ... />)` を接続する。
+- [x] **Step 4: `pnpm exec vitest run src/config.test.ts src/api/client.test.ts src/app.test.tsx`、`pnpm test`、`pnpm run typecheck`、`pnpm run format:check`、`pnpm run lint`、`pnpm run build`、`git diff --check` を実行し PASS を確認する。** `dist/` は commit しない。
+- [x] **Step 5: この task のファイルを Task 2 全体の commit に含める。** `src/app.tsx`、`src/app.test.tsx`、`src/main.tsx` を `194e615` に含めた。
 
 ## 継続前の確認
 
