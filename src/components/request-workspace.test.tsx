@@ -40,6 +40,14 @@ const audit: AuditEvent = {
 };
 function client(overrides: Partial<ApiClient> = {}): ApiClient {
 	return {
+		listPending: vi.fn().mockResolvedValue([]),
+		getSession: vi.fn().mockResolvedValue(session),
+		submitRequest: vi
+			.fn()
+			.mockResolvedValue({ ...draft, status: "pending", version: 4 }),
+		approveRequest: vi
+			.fn()
+			.mockResolvedValue({ ...draft, status: "approved", version: 4 }),
 		getRequest: vi.fn().mockResolvedValue(draft),
 		listAuditEvents: vi.fn().mockResolvedValue([audit]),
 		createRequest: vi.fn().mockResolvedValue(draft),
@@ -69,6 +77,249 @@ function mount(
 }
 
 describe("RequestWorkspace", () => {
+	it("loads only an Approver's pending queue and selects its opaque ID", async () => {
+		const api = client({
+			listPending: vi
+				.fn()
+				.mockResolvedValue([{ ...draft, id: "a/b", status: "pending" }]),
+		});
+		const { onRequestIdChange } = mount(api, null, {
+			actor: { memberId: "assignee", roles: ["approver"] },
+			csrfToken: "csrf",
+		});
+		fireEvent.click(await screen.findByRole("button", { name: /VPN access/ }));
+		expect(api.listPending).toHaveBeenCalledOnce();
+		expect(onRequestIdChange).toHaveBeenCalledWith("a/b");
+	});
+
+	it("shows an empty Approver queue without loading it for a Requester", async () => {
+		const api = client();
+		const { rerender } = mount(api);
+		expect(api.listPending).not.toHaveBeenCalled();
+		rerender(
+			<RequestWorkspace
+				client={api}
+				session={{
+					actor: { memberId: "assignee", roles: ["approver"] },
+					csrfToken: "csrf",
+				}}
+				requestId={null}
+				onRequestIdChange={vi.fn()}
+				onSessionChange={vi.fn()}
+				onAuthenticationRequired={vi.fn()}
+				onNotice={vi.fn()}
+			/>,
+		);
+		expect(await screen.findByText("No pending requests.")).toBeInTheDocument();
+		expect(api.listPending).toHaveBeenCalledOnce();
+	});
+
+	it("submits the displayed version and refreshes audit", async () => {
+		const api = client();
+		mount(api, draft.id);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		await waitFor(() =>
+			expect(api.submitRequest).toHaveBeenCalledWith(draft.id, 3, "csrf"),
+		);
+		await waitFor(() => expect(api.listAuditEvents).toHaveBeenCalledTimes(2));
+		expect(screen.getByText("Status: pending")).toBeInTheDocument();
+	});
+
+	it("approves an assigned Pending request and refreshes audit and queue", async () => {
+		const pending = {
+			...draft,
+			status: "pending" as const,
+			approval: {
+				id: "approval-1",
+				assigneeMemberId: "assignee",
+				status: "pending" as const,
+				approvedAt: null,
+			},
+		};
+		const api = client({
+			getRequest: vi.fn().mockResolvedValue(pending),
+			approveRequest: vi
+				.fn()
+				.mockResolvedValue({ ...pending, status: "approved", version: 4 }),
+		});
+		mount(api, draft.id, {
+			actor: { memberId: "assignee", roles: ["approver"] },
+			csrfToken: "csrf",
+		});
+		fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+		await waitFor(() =>
+			expect(api.approveRequest).toHaveBeenCalledWith(draft.id, 3, "csrf"),
+		);
+		await waitFor(() => expect(api.listAuditEvents).toHaveBeenCalledTimes(2));
+		expect(api.listPending).toHaveBeenCalledTimes(2);
+	});
+
+	it("prevents a repeated click while a mutation is in flight", async () => {
+		let complete!: (request: Request) => void;
+		const api = client({
+			submitRequest: vi.fn().mockReturnValue(
+				new Promise<Request>((resolve) => {
+					complete = resolve;
+				}),
+			),
+		});
+		mount(api, draft.id);
+		const submit = await screen.findByRole("button", { name: "Submit" });
+		fireEvent.click(submit);
+		fireEvent.click(submit);
+		expect(api.submitRequest).toHaveBeenCalledTimes(1);
+		await act(async () =>
+			complete({ ...draft, status: "pending", version: 4 }),
+		);
+	});
+
+	it("clears workspace data after a mutation requires authentication", async () => {
+		const api = client({
+			submitRequest: vi.fn().mockRejectedValue(
+				new ApiError(401, {
+					code: "authentication_required",
+					message: "expired",
+				}),
+			),
+		});
+		const onAuthenticationRequired = vi.fn();
+		render(
+			<RequestWorkspace
+				client={api}
+				session={session}
+				requestId={draft.id}
+				onRequestIdChange={vi.fn()}
+				onSessionChange={vi.fn()}
+				onAuthenticationRequired={onAuthenticationRequired}
+				onNotice={vi.fn()}
+			/>,
+		);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		await waitFor(() =>
+			expect(onAuthenticationRequired).toHaveBeenCalledOnce(),
+		);
+		expect(screen.queryByRole("region", { name: "Request detail" })).toBeNull();
+	});
+
+	it("offers an explicit read after an uncertain transition result", async () => {
+		const api = client({
+			submitRequest: vi.fn().mockRejectedValue(new Error("offline")),
+		});
+		const { onNotice } = mount(api, draft.id);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		await waitFor(() => expect(onNotice).toHaveBeenCalled());
+		expect(api.submitRequest).toHaveBeenCalledTimes(1);
+		expect(onNotice.mock.lastCall?.[0].text).toMatch(
+			/refresh request details/i,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Refresh request" }));
+		await waitFor(() => expect(api.getRequest).toHaveBeenCalledTimes(2));
+	});
+
+	it.each(["version_conflict", "invalid_state"] as const)(
+		"refreshes reads once after %s without replay",
+		async (code) => {
+			const api = client({
+				submitRequest: vi
+					.fn()
+					.mockRejectedValue(new ApiError(409, { code, message: "stale" })),
+			});
+			const { onNotice } = mount(api, draft.id);
+			fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+			await waitFor(() => expect(api.getRequest).toHaveBeenCalledTimes(2));
+			expect(api.listAuditEvents).toHaveBeenCalledTimes(2);
+			expect(api.submitRequest).toHaveBeenCalledTimes(1);
+			expect(onNotice.mock.lastCall?.[0].text).toMatch(/changed|refresh/i);
+		},
+	);
+
+	it("refreshes CSRF once and waits for another click", async () => {
+		const rotated = { ...session, csrfToken: "rotated" };
+		const api = client({
+			submitRequest: vi
+				.fn()
+				.mockRejectedValueOnce(
+					new ApiError(403, {
+						code: "csrf_validation_failed",
+						message: "stale",
+					}),
+				)
+				.mockResolvedValueOnce({ ...draft, status: "pending" }),
+			getSession: vi.fn().mockResolvedValue(rotated),
+		});
+		const onSessionChange = vi.fn();
+		const { rerender } = render(
+			<RequestWorkspace
+				client={api}
+				session={session}
+				requestId={draft.id}
+				onRequestIdChange={vi.fn()}
+				onSessionChange={onSessionChange}
+				onAuthenticationRequired={vi.fn()}
+				onNotice={vi.fn()}
+			/>,
+		);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		await waitFor(() => expect(onSessionChange).toHaveBeenCalledWith(rotated));
+		expect(api.submitRequest).toHaveBeenCalledTimes(1);
+		rerender(
+			<RequestWorkspace
+				client={api}
+				session={rotated}
+				requestId={draft.id}
+				onRequestIdChange={vi.fn()}
+				onSessionChange={onSessionChange}
+				onAuthenticationRequired={vi.fn()}
+				onNotice={vi.fn()}
+			/>,
+		);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		await waitFor(() =>
+			expect(api.submitRequest).toHaveBeenLastCalledWith(
+				draft.id,
+				3,
+				"rotated",
+			),
+		);
+	});
+
+	it("offers a session read retry when CSRF refresh fails", async () => {
+		const api = client({
+			submitRequest: vi.fn().mockRejectedValue(
+				new ApiError(403, {
+					code: "csrf_validation_failed",
+					message: "stale",
+				}),
+			),
+			getSession: vi
+				.fn()
+				.mockRejectedValueOnce(new Error("offline"))
+				.mockResolvedValueOnce({ ...session, csrfToken: "rotated" }),
+		});
+		const onSessionChange = vi.fn();
+		render(
+			<RequestWorkspace
+				client={api}
+				session={session}
+				requestId={draft.id}
+				onRequestIdChange={vi.fn()}
+				onSessionChange={onSessionChange}
+				onAuthenticationRequired={vi.fn()}
+				onNotice={vi.fn()}
+			/>,
+		);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Retry session read" }),
+		);
+		await waitFor(() =>
+			expect(onSessionChange).toHaveBeenCalledWith({
+				...session,
+				csrfToken: "rotated",
+			}),
+		);
+		expect(api.submitRequest).toHaveBeenCalledTimes(1);
+	});
 	it("ignores an old read after the selected ID changes", async () => {
 		let resolveOld!: (request: Request) => void;
 		const old = new Promise<Request>((resolve) => {
@@ -192,7 +443,7 @@ describe("RequestWorkspace", () => {
 				"csrf",
 			),
 		);
-		expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
 	});
 
 	it("shows Approve only for the assigned Approver on Pending", async () => {
@@ -231,7 +482,7 @@ describe("RequestWorkspace", () => {
 		);
 		expect(
 			await screen.findByRole("button", { name: "Approve" }),
-		).toBeDisabled();
+		).toBeEnabled();
 		expect(screen.queryByRole("button", { name: "Update Draft" })).toBeNull();
 	});
 

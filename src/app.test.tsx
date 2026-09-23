@@ -4,6 +4,7 @@ import {
 	fireEvent,
 	render,
 	screen,
+	waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StrictMode } from "react";
@@ -36,6 +37,133 @@ function clientWith(getSession: ApiClient["getSession"]): ApiClient {
 }
 
 describe("App session bootstrap", () => {
+	it("logs out with the current token and shows Sign in", async () => {
+		const logout = vi.fn().mockResolvedValue(undefined);
+		render(
+			<App
+				client={
+					{
+						getSession: vi.fn().mockResolvedValue(session),
+						logout,
+					} as unknown as ApiClient
+				}
+				login={vi.fn()}
+			/>,
+		);
+		fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
+		await screen.findByRole("button", { name: "Sign in" });
+		expect(logout).toHaveBeenCalledWith("secret-csrf-token");
+	});
+
+	it("clears session when logout returns authentication_required", async () => {
+		const logout = vi.fn().mockRejectedValue(
+			new ApiError(401, {
+				code: "authentication_required",
+				message: "expired",
+			}),
+		);
+		render(
+			<App
+				client={
+					{
+						getSession: vi.fn().mockResolvedValue(session),
+						logout,
+					} as unknown as ApiClient
+				}
+				login={vi.fn()}
+			/>,
+		);
+		fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
+		await screen.findByRole("button", { name: "Sign in" });
+		expect(screen.queryByText("Signed in")).toBeNull();
+	});
+
+	it("uses the refreshed token only after another explicit logout click", async () => {
+		const logout = vi
+			.fn()
+			.mockRejectedValueOnce(
+				new ApiError(403, { code: "csrf_validation_failed", message: "stale" }),
+			)
+			.mockResolvedValueOnce(undefined);
+		const getSession = vi
+			.fn()
+			.mockResolvedValueOnce(session)
+			.mockResolvedValueOnce({ ...session, csrfToken: "rotated" });
+		render(
+			<App
+				client={{ getSession, logout } as unknown as ApiClient}
+				login={vi.fn()}
+			/>,
+		);
+		fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
+		await screen.findByText(/Session token refreshed/);
+		expect(logout).toHaveBeenCalledTimes(1);
+		fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+		await screen.findByRole("button", { name: "Sign in" });
+		expect(logout).toHaveBeenLastCalledWith("rotated");
+	});
+
+	it("does not restore a session from a late CSRF refresh after logout", async () => {
+		window.history.replaceState(null, "", "/?requestId=request-1");
+		const refresh = deferred<Session>();
+		const getSession = vi
+			.fn()
+			.mockResolvedValueOnce(session)
+			.mockReturnValueOnce(refresh.promise);
+		const draft = {
+			id: "request-1",
+			title: "VPN",
+			description: "",
+			status: "draft",
+			version: 1,
+			requesterMemberId: "member-1",
+			approval: null,
+			createdAt: "now",
+			updatedAt: "now",
+		};
+		const client = {
+			getSession,
+			getRequest: vi.fn().mockResolvedValue(draft),
+			listAuditEvents: vi.fn().mockResolvedValue([]),
+			submitRequest: vi.fn().mockRejectedValue(
+				new ApiError(403, {
+					code: "csrf_validation_failed",
+					message: "stale",
+				}),
+			),
+			logout: vi.fn().mockResolvedValue(undefined),
+		} as unknown as ApiClient;
+		render(<App client={client} login={vi.fn()} />);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		await waitFor(() => expect(getSession).toHaveBeenCalledTimes(2));
+		fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+		await screen.findByRole("button", { name: "Sign in" });
+		await act(async () => refresh.resolve({ ...session, csrfToken: "late" }));
+		expect(screen.queryByText("Signed in")).toBeNull();
+	});
+
+	it("clears authenticated data after a request read requires authentication", async () => {
+		window.history.replaceState(null, "", "/?requestId=request-1");
+		render(
+			<App
+				client={
+					{
+						getSession: vi.fn().mockResolvedValue(session),
+						getRequest: vi.fn().mockRejectedValue(
+							new ApiError(401, {
+								code: "authentication_required",
+								message: "expired",
+							}),
+						),
+						listAuditEvents: vi.fn().mockResolvedValue([]),
+					} as unknown as ApiClient
+				}
+				login={vi.fn()}
+			/>,
+		);
+		await screen.findByRole("button", { name: "Sign in" });
+		expect(screen.queryByText("Signed in")).toBeNull();
+	});
 	it("reads an opaque URL ID and follows popstate without requesting dot segments", async () => {
 		window.history.replaceState(null, "", "/?requestId=a%2Fb");
 		const getRequest = vi.fn().mockResolvedValue({
