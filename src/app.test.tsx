@@ -36,6 +36,38 @@ function clientWith(getSession: ApiClient["getSession"]): ApiClient {
 }
 
 describe("App session bootstrap", () => {
+	it("reads an opaque URL ID and follows popstate without requesting dot segments", async () => {
+		window.history.replaceState(null, "", "/?requestId=a%2Fb");
+		const getRequest = vi.fn().mockResolvedValue({
+			id: "a/b",
+			title: "First",
+			description: "",
+			status: "approved",
+			version: 1,
+			requesterMemberId: "member-1",
+			approval: null,
+			createdAt: "2026-09-23T00:00:00Z",
+			updatedAt: "2026-09-23T00:00:00Z",
+		});
+		const listAuditEvents = vi.fn().mockResolvedValue([]);
+		render(
+			<App
+				client={
+					{
+						getSession: vi.fn().mockResolvedValue(session),
+						getRequest,
+						listAuditEvents,
+					} as unknown as ApiClient
+				}
+				login={vi.fn()}
+			/>,
+		);
+		await screen.findByRole("heading", { name: "First" });
+		expect(getRequest).toHaveBeenCalledWith("a/b");
+		window.history.replaceState(null, "", "/?requestId=..");
+		fireEvent.popState(window);
+		expect(getRequest).toHaveBeenCalledTimes(1);
+	});
 	it("loads organization choices on the selection path without bootstrapping a session", async () => {
 		window.history.replaceState(null, "", "/organization-selection");
 		const getSession = vi.fn();
