@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { ApiError, type ApiClient } from "../api/client";
 import type { OrganizationSelection as Selection } from "../api/types";
-import { ErrorNotice } from "./error-notice";
+import { ErrorNotice, type Notice } from "./error-notice";
 import { SignIn } from "./sign-in";
 
 type State =
 	| { kind: "loading" }
 	| { kind: "ready"; selection: Selection }
 	| { kind: "pending"; selection: Selection }
-	| { kind: "sign-in"; message: string };
+	| { kind: "sign-in"; notice: Notice };
+
+function failureCode(error: unknown): Notice["code"] {
+	return error instanceof ApiError ? error.body.code : "transport_failure";
+}
 
 export function OrganizationSelection({
 	client,
@@ -21,18 +25,32 @@ export function OrganizationSelection({
 }): ReactElement {
 	const [state, setState] = useState<State>({ kind: "loading" });
 	const attempted = useRef(false);
+	const selectionRequest = useRef<{
+		client: ApiClient;
+		promise: Promise<Selection>;
+	} | null>(null);
 	useEffect(() => {
 		let active = true;
-		client.getOrganizationSelection().then(
+		if (selectionRequest.current?.client !== client) {
+			selectionRequest.current = {
+				client,
+				promise: client.getOrganizationSelection(),
+			};
+			attempted.current = false;
+			setState({ kind: "loading" });
+		}
+		selectionRequest.current.promise.then(
 			(selection) => {
 				if (active) setState({ kind: "ready", selection });
 			},
-			() => {
+			(error: unknown) => {
 				if (active)
 					setState({
 						kind: "sign-in",
-						message:
-							"Could not load organization choices. Please sign in again.",
+						notice: {
+							code: failureCode(error),
+							text: "Could not load organization choices. Please sign in again.",
+						},
 					});
 			},
 		);
@@ -54,7 +72,10 @@ export function OrganizationSelection({
 						error.body.code === "csrf_validation_failed")
 						? "Organization selection expired. Please sign in again."
 						: "Could not select the organization. Please sign in again.";
-				setState({ kind: "sign-in", message });
+				setState({
+					kind: "sign-in",
+					notice: { code: failureCode(error), text: message },
+				});
 			},
 		);
 	}
@@ -63,9 +84,7 @@ export function OrganizationSelection({
 	if (state.kind === "sign-in")
 		return (
 			<>
-				<ErrorNotice
-					notice={{ code: "invalid_auth_transaction", text: state.message }}
-				/>
+				<ErrorNotice notice={state.notice} />
 				<SignIn login={login} />
 			</>
 		);
