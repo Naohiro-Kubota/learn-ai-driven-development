@@ -7,6 +7,8 @@ import {
 } from "react";
 import { ApiError, type ApiClient } from "./api/client";
 import type { Session } from "./api/types";
+import { ErrorNotice, type Notice } from "./components/error-notice";
+import { RequestWorkspace } from "./components/request-workspace";
 import { OrganizationSelection } from "./components/organization-selection";
 import { SignIn } from "./components/sign-in";
 
@@ -32,6 +34,7 @@ export function App({
 		kind: "loading",
 	});
 	const [selectedRequestId, setSelectedRequestId] = useState(currentRequestId);
+	const [notice, setNotice] = useState<Notice | null>(null);
 	const sessionGeneration = useRef(0);
 	const isSelectionPath =
 		window.location.pathname === "/organization-selection";
@@ -43,8 +46,6 @@ export function App({
 		window.history.pushState(null, "", url);
 		setSelectedRequestId(validId);
 	}, []);
-	void selectedRequestId;
-	void onRequestIdChange;
 	const loadSession = useCallback(() => {
 		const id = ++sessionGeneration.current;
 		setSessionState({ kind: "loading" });
@@ -103,7 +104,20 @@ export function App({
 	return (
 		<main>
 			<h1>Signed in</h1>
-			<section aria-label="Workspace" />
+			{notice && <ErrorNotice notice={notice} />}
+			<RequestWorkspace
+				client={client}
+				session={sessionState.session}
+				requestId={selectedRequestId}
+				onRequestIdChange={onRequestIdChange}
+				onSessionChange={(session) =>
+					setSessionState({ kind: "authenticated", session })
+				}
+				onAuthenticationRequired={() =>
+					setSessionState({ kind: "unauthenticated" })
+				}
+				onNotice={setNotice}
+			/>
 		</main>
 	);
 }
