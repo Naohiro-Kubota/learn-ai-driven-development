@@ -38,17 +38,27 @@ export function App({
 	const [logoutPending, setLogoutPending] = useState(false);
 	const sessionGeneration = useRef(0);
 	const authenticated = useRef(false);
+	const actorMemberId = useRef<string | null>(null);
 	const logoutInFlight = useRef(false);
 	const onAuthenticationRequired = useCallback(() => {
 		sessionGeneration.current++;
 		authenticated.current = false;
+		actorMemberId.current = null;
 		setSelectedRequestId(null);
 		setNotice(null);
 		setSessionState({ kind: "unauthenticated" });
 	}, []);
 	const onSessionChange = useCallback((session: Session) => {
-		if (authenticated.current)
-			setSessionState({ kind: "authenticated", session });
+		if (!authenticated.current) return;
+		if (actorMemberId.current !== session.actor.memberId) {
+			const url = new URL(window.location.href);
+			url.searchParams.delete("requestId");
+			window.history.replaceState(null, "", url);
+			setSelectedRequestId(null);
+			setNotice(null);
+		}
+		actorMemberId.current = session.actor.memberId;
+		setSessionState({ kind: "authenticated", session });
 	}, []);
 	const isSelectionPath =
 		window.location.pathname === "/organization-selection";
@@ -63,11 +73,13 @@ export function App({
 	const loadSession = useCallback(() => {
 		const id = ++sessionGeneration.current;
 		authenticated.current = false;
+		actorMemberId.current = null;
 		setSessionState({ kind: "loading" });
 		client.getSession().then(
 			(session) => {
 				if (sessionGeneration.current === id) {
 					authenticated.current = true;
+					actorMemberId.current = session.actor.memberId;
 					setSessionState({ kind: "authenticated", session });
 				}
 			},
@@ -182,6 +194,7 @@ export function App({
 			</button>
 			{notice && <ErrorNotice notice={notice} />}
 			<RequestWorkspace
+				key={sessionState.session.actor.memberId}
 				client={client}
 				session={sessionState.session}
 				requestId={selectedRequestId}
