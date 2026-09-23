@@ -7,6 +7,13 @@ import {
 } from "react";
 import { ApiError, type ApiClient } from "./api/client";
 import type { Session } from "./api/types";
+import { OrganizationSelection } from "./components/organization-selection";
+import { SignIn } from "./components/sign-in";
+
+function currentRequestId(): string | null {
+	const id = new URLSearchParams(window.location.search).get("requestId");
+	return id && id !== "." && id !== ".." ? id : null;
+}
 
 type SessionState =
 	| { kind: "loading" }
@@ -24,17 +31,30 @@ export function App({
 	const [sessionState, setSessionState] = useState<SessionState>({
 		kind: "loading",
 	});
-	const requestId = useRef(0);
+	const [selectedRequestId, setSelectedRequestId] = useState(currentRequestId);
+	const sessionGeneration = useRef(0);
+	const isSelectionPath =
+		window.location.pathname === "/organization-selection";
+	const onRequestIdChange = useCallback((id: string | null) => {
+		const validId = id && id !== "." && id !== ".." ? id : null;
+		const url = new URL(window.location.href);
+		if (validId) url.searchParams.set("requestId", validId);
+		else url.searchParams.delete("requestId");
+		window.history.pushState(null, "", url);
+		setSelectedRequestId(validId);
+	}, []);
+	void selectedRequestId;
+	void onRequestIdChange;
 	const loadSession = useCallback(() => {
-		const id = ++requestId.current;
+		const id = ++sessionGeneration.current;
 		setSessionState({ kind: "loading" });
 		client.getSession().then(
 			(session) => {
-				if (requestId.current === id)
+				if (sessionGeneration.current === id)
 					setSessionState({ kind: "authenticated", session });
 			},
 			(error: unknown) => {
-				if (requestId.current !== id) return;
+				if (sessionGeneration.current !== id) return;
 				setSessionState(
 					error instanceof ApiError &&
 						error.body.code === "authentication_required"
@@ -46,22 +66,30 @@ export function App({
 	}, [client]);
 
 	useEffect(() => {
+		if (isSelectionPath) return;
 		loadSession();
 		return () => {
-			requestId.current += 1;
+			sessionGeneration.current += 1;
 		};
-	}, [loadSession]);
+	}, [isSelectionPath, loadSession]);
+
+	useEffect(() => {
+		const onPopState = () => setSelectedRequestId(currentRequestId());
+		window.addEventListener("popstate", onPopState);
+		return () => window.removeEventListener("popstate", onPopState);
+	}, []);
+
+	if (isSelectionPath)
+		return (
+			<OrganizationSelection
+				client={client}
+				login={login}
+				onSelected={() => window.location.assign("/")}
+			/>
+		);
 
 	if (sessionState.kind === "loading") return <main>Loading…</main>;
-	if (sessionState.kind === "unauthenticated") {
-		return (
-			<main>
-				<button type="button" onClick={login}>
-					Sign in
-				</button>
-			</main>
-		);
-	}
+	if (sessionState.kind === "unauthenticated") return <SignIn login={login} />;
 	if (sessionState.kind === "error") {
 		return (
 			<main>
