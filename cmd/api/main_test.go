@@ -62,7 +62,7 @@ func TestNewHandlerReturnsOIDCInitializationError(t *testing.T) {
 
 func validConfig() config.Config {
 	return config.Config{
-		AllowedOrigin:      "https://app.example.test",
+		FrontendOrigin:     "https://app.example.test",
 		OIDCIssuer:         "https://identity.example.test",
 		OIDCClientID:       "approval-flow",
 		OIDCRedirectURI:    "https://app.example.test/auth/oidc/callback",
@@ -75,7 +75,7 @@ func validConfig() config.Config {
 
 func validEnvironment() func(string) string {
 	values := map[string]string{
-		"APP_ALLOWED_ORIGIN":   "https://app.example.test",
+		"APP_FRONTEND_ORIGIN":  "https://app.example.test",
 		"APP_COOKIE_SECURE":    "true",
 		"APP_LISTEN_ADDR":      "127.0.0.1:8080",
 		"AUTH_TRANSACTION_KEY": base64.StdEncoding.EncodeToString(make([]byte, 32)),

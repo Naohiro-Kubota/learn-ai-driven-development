@@ -14,6 +14,7 @@
 		"test": "vitest run",
 		"test:e2e": "playwright test",
 		"test:db": "node scripts/test-postgres.mjs",
+		"verify:openapi": "node scripts/verify-openapi.mjs",
 		"typecheck": "tsc -b --pretty false",
 		"format": "biome format --write .",
 		"format:check": "biome format .",
@@ -35,6 +36,7 @@
 		"@vitejs/plugin-react": "6.1.1",
 		"jsdom": "30.1.0",
 		"typescript": "7.0.2",
+		"yaml": "2.9.1",
 		"vite": "8.3.0",
 		"vitest": "5.0.1"
 	}

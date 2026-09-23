@@ -48,7 +48,7 @@ func (f fakeSelectionStore) Complete(ctx context.Context, input auth.CompleteOrg
 }
 
 func testDependencies() Dependencies {
-	return Dependencies{Config: config.Config{CookieSecure: true, AllowedOrigin: allowedOrigin, AuthTransactionTTL: 5 * time.Minute}, Now: func() time.Time { return testNow }}
+	return Dependencies{Config: config.Config{CookieSecure: true, FrontendOrigin: allowedOrigin, AuthTransactionTTL: 5 * time.Minute}, Now: func() time.Time { return testNow }}
 }
 
 func TestLoginRedirectAndTransactionCookie(t *testing.T) {
@@ -106,7 +106,7 @@ func TestCallbackSessionAndSelection(t *testing.T) {
 			rr := serveCallback(d, "code=code-secret&state=state-secret&returnUrl=https://evil.example")
 			assertClearedCookie(t, rr, "__Host-approval_flow_auth_transaction")
 			if multi {
-				assertRedirect(t, rr, "/organization-selection")
+				assertRedirect(t, rr, allowedOrigin+"/organization-selection")
 				cookie := requireCookie(t, rr, "__Host-approval_flow_organization_selection")
 				assertCookiePolicy(t, cookie, true)
 				if cookie.Value != "selection-secret" || cookie.MaxAge != 300 || !cookie.Expires.Equal(testNow.Add(5*time.Minute)) {
@@ -114,7 +114,7 @@ func TestCallbackSessionAndSelection(t *testing.T) {
 				}
 				assertNoSessionCookie(t, rr)
 			} else {
-				assertRedirect(t, rr, "/")
+				assertRedirect(t, rr, allowedOrigin+"/")
 				cookie := requireCookie(t, rr, "__Host-approval_flow_session")
 				assertCookiePolicy(t, cookie, true)
 				if cookie.Value != "session-secret" {
@@ -190,7 +190,7 @@ func TestCallbackReplayNeverIssuesAnotherSession(t *testing.T) {
 		consumed = true
 		return auth.LoginResult{Session: &auth.SessionInput{Cookie: "session-secret"}}, nil
 	}}
-	assertRedirect(t, serveCallback(d, "code=c&state=s"), "/")
+	assertRedirect(t, serveCallback(d, "code=c&state=s"), allowedOrigin+"/")
 	rr := serveCallback(d, "code=c&state=s")
 	assertError(t, rr, 400, "invalid_auth_transaction")
 	assertNoSessionCookie(t, rr)
@@ -255,7 +255,7 @@ func TestOrganizationSelectionCompleteAndReplay(t *testing.T) {
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, selectionRequest(http.MethodPost, `{"memberId":"member-1"}`, true))
 		if attempt == 0 {
-			assertRedirect(t, rr, "/")
+			assertRedirect(t, rr, allowedOrigin+"/")
 			assertClearedCookie(t, rr, "__Host-approval_flow_organization_selection")
 			cookie := requireCookie(t, rr, "__Host-approval_flow_session")
 			assertCookiePolicy(t, cookie, true)
@@ -429,7 +429,7 @@ func TestOrganizationSelectionOpenAPIContract(t *testing.T) {
 	path := yamlBlock(t, doc, "  /auth/oidc/organization-selection:\n", "  /api/")
 	get := yamlBlock(t, path, "    get:\n", "    post:\n")
 	post := yamlBlock(t, path, "    post:\n", "\x00")
-	for _, text := range []string{"organizationSelectionCookie: []", "'200':", "#/components/schemas/OrganizationSelection", "'400':", "#/components/responses/InvalidAuthTransaction"} {
+	for _, text := range []string{"organizationSelectionCookie: []", "'200':", "#/components/schemas/OrganizationSelection", "'400':", "#/components/responses/InvalidAuthTransaction", "'403':", "#/components/responses/ForbiddenOrCsrfValidationFailed"} {
 		if !strings.Contains(get, text) {
 			t.Errorf("GET contract missing %s", text)
 		}

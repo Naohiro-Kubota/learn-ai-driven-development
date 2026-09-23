@@ -9,7 +9,9 @@ performed outside Codex or commands intentionally designed to evade this check.
 from __future__ import annotations
 
 import json
+import os
 import re
+import shlex
 import subprocess
 import sys
 from typing import Any
@@ -35,6 +37,8 @@ READ_ONLY_GIT_COMMAND = re.compile(
     r")\s*$"
 )
 GIT_COMMAND = re.compile(r"\bgit\b")
+SHELL_CONTROL = re.compile(r"[;&|><`$()]")
+GIT_C_OPTION = re.compile(r"\bgit(?:\s+\S+)*\s+-C(?:\s|\S)")
 GH_PULL_REQUEST_MERGE = re.compile(
     r"\bgh\s+pr\s+merge\b|\bgh\s+api\b[^\n]*/pulls/[^/\s]+/merge(?:[/?\s]|$)"
 )
@@ -49,6 +53,53 @@ def current_branch(cwd: str) -> str | None:
     )
     branch = result.stdout.strip()
     return branch or None
+
+
+def git_c_workdir(command: str, parent_cwd: str) -> str | None:
+    if SHELL_CONTROL.search(command):
+        return None
+
+    try:
+        arguments = shlex.split(command)
+    except ValueError:
+        return None
+    if not arguments or arguments[0] != "git":
+        return None
+
+    workdirs: list[str] = []
+    index = 1
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "-C":
+            if index + 1 >= len(arguments):
+                return None
+            workdirs.append(arguments[index + 1])
+            index += 2
+            continue
+        if argument.startswith("-C") and len(argument) > 2:
+            workdirs.append(argument[2:])
+            index += 1
+            continue
+        if argument.startswith("-"):
+            index += 1
+            continue
+        break
+
+    if len(workdirs) != 1:
+        return None
+    if os.path.isabs(workdirs[0]):
+        return os.path.normpath(workdirs[0])
+    return os.path.normpath(os.path.join(parent_cwd, workdirs[0]))
+
+
+def execution_cwd(event: dict[str, Any], tool_input: dict[str, Any]) -> str | None:
+    workdir = tool_input.get("workdir")
+    cwd = event.get("cwd")
+    if isinstance(workdir, str) and workdir:
+        cwd = workdir
+    if not isinstance(cwd, str) or not cwd:
+        return None
+    return git_c_workdir(tool_input.get("command", ""), cwd) or cwd
 
 
 def deny(reason: str) -> None:
@@ -79,6 +130,10 @@ def main() -> int:
         deny("保護ブランチの判定に必要なコマンド入力を解析できませんでした。")
         return 0
 
+    if SHELL_CONTROL.search(command) and GIT_C_OPTION.search(command):
+        deny("git -C を含む複合コマンドは対象ブランチを安全に判定できないため、Codex からは禁止されています。")
+        return 0
+
     branch_creation = BRANCH_CREATION_FROM_PROTECTED.fullmatch(command)
     read_only = READ_ONLY_GIT_COMMAND.fullmatch(command)
     safe_on_protected_branch = branch_creation or read_only
@@ -95,8 +150,8 @@ def main() -> int:
         deny("Pull Request のマージは対象ブランチを安全に判定できないため、Codex からは禁止されています。")
         return 0
 
-    cwd = event.get("cwd")
-    if isinstance(cwd, str) and GIT_COMMAND.search(command) and not safe_on_protected_branch:
+    cwd = execution_cwd(event, tool_input)
+    if cwd and GIT_COMMAND.search(command) and not safe_on_protected_branch:
         branch = current_branch(cwd)
         if branch in PROTECTED_BRANCHES:
             deny(f"{branch} は保護ブランチです。Codex から変更できません。")

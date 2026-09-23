@@ -399,5 +399,5 @@ func requestTestDependencies() Dependencies {
 	}, validate: func(context.Context, string, string, time.Time) error { return nil }}, Now: func() time.Time { return testNow }}
 }
 func testConfig() config.Config {
-	return config.Config{AllowedOrigin: allowedOrigin, CookieSecure: true}
+	return config.Config{FrontendOrigin: allowedOrigin, CookieSecure: true}
 }

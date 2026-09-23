@@ -32,6 +32,8 @@ paths:
               description: Short-lived OIDC authentication transaction cookie.
               schema:
                 type: string
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
         '500':
           $ref: '#/components/responses/InternalServerError'
   /auth/oidc/callback:
@@ -42,8 +44,9 @@ paths:
       description: |
         The callback consumes the one-time authentication transaction. On success,
         it issues a new application session cookie and redirects to `/`, or issues
-        a short-lived Organization-selection cookie and redirects to
-        `/organization-selection` when multiple memberships exist. A
+        a short-lived Organization-selection cookie and redirects to the
+        configured frontend origin plus `/organization-selection` when multiple
+        memberships exist. A
         callback must provide either `code` and `state`, or an OAuth error.
       parameters:
         - name: code
@@ -68,13 +71,13 @@ paths:
             type: string
       responses:
         '302':
-          description: Session established or Organization selection required; redirect to a fixed local UI path.
+          description: Session established or Organization selection required; redirect to the configured frontend origin plus a fixed UI path.
           headers:
             Location:
               required: true
               schema:
                 type: string
-                format: uri-reference
+                format: uri
             Set-Cookie:
               description: New application session or Organization-selection cookie; the authentication transaction cookie is cleared.
               schema:
@@ -93,6 +96,8 @@ paths:
               example:
                 code: invalid_auth_transaction
                 message: The sign-in request is no longer valid.
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
         '500':
           description: Unexpected callback failure after accepting exactly one named, nonempty authentication transaction cookie; that cookie is cleared.
           headers:
@@ -127,6 +132,8 @@ paths:
                 $ref: '#/components/schemas/OrganizationSelection'
         '400':
           $ref: '#/components/responses/InvalidAuthTransaction'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
         '500':
           $ref: '#/components/responses/InternalServerError'
     post:
@@ -138,7 +145,8 @@ paths:
         X-CSRF-Token. A recognized selection attempt is consumed atomically,
         including CSRF mismatch or selection of a Member outside the snapshot.
         Replays cannot create a session. Successful selection clears the selection
-        cookie and redirects to `/`; client-supplied redirect destinations are ignored.
+        cookie and redirects to the configured frontend origin plus `/`; client-supplied
+        redirect destinations are ignored.
       security:
         - organizationSelectionCookie: []
           csrfToken: []
@@ -150,13 +158,13 @@ paths:
               $ref: '#/components/schemas/SelectOrganizationInput'
       responses:
         '302':
-          description: Selected Member session established; browser redirected to the fixed local UI path.
+          description: Selected Member session established; browser redirected to the configured frontend origin plus `/`.
           headers:
             Location:
               required: true
               schema:
                 type: string
-                const: /
+                format: uri
             Set-Cookie:
               description: New application session cookie and cleared Organization-selection cookie.
               schema:
@@ -201,6 +209,10 @@ paths:
                 $ref: '#/components/schemas/Session'
         '401':
           $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /api/v1/session/logout:
     post:
       tags: [Session]
@@ -220,6 +232,8 @@ paths:
           $ref: '#/components/responses/AuthenticationRequired'
         '403':
           $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /api/v1/requests:
     post:
       tags: [Requests]
@@ -253,6 +267,8 @@ paths:
           $ref: '#/components/responses/AuthenticationRequired'
         '403':
           $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /api/v1/requests/pending:
     get:
       tags: [Requests]
@@ -270,7 +286,9 @@ paths:
         '401':
           $ref: '#/components/responses/AuthenticationRequired'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /api/v1/requests/{requestId}:
     parameters:
       - $ref: '#/components/parameters/RequestId'
@@ -289,8 +307,12 @@ paths:
                 $ref: '#/components/schemas/Request'
         '401':
           $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
         '404':
           $ref: '#/components/responses/RequestNotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     patch:
       tags: [Requests]
       operationId: updateDraftRequest
@@ -322,6 +344,8 @@ paths:
           $ref: '#/components/responses/RequestNotFound'
         '409':
           $ref: '#/components/responses/RequestMutationConflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /api/v1/requests/{requestId}/submit:
     post:
       tags: [Requests]
@@ -355,6 +379,8 @@ paths:
           $ref: '#/components/responses/RequestNotFound'
         '409':
           $ref: '#/components/responses/RequestMutationConflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /api/v1/requests/{requestId}/approvals:
     post:
       tags: [Approvals]
@@ -388,6 +414,8 @@ paths:
           $ref: '#/components/responses/RequestNotFound'
         '409':
           $ref: '#/components/responses/RequestMutationConflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /api/v1/requests/{requestId}/audit-events:
     get:
       tags: [Audit]
@@ -406,8 +434,12 @@ paths:
                 $ref: '#/components/schemas/AuditEventList'
         '401':
           $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrCsrfValidationFailed'
         '404':
           $ref: '#/components/responses/RequestNotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 components:
   securitySchemes:
     sessionCookie:

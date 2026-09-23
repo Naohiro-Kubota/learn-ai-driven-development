@@ -30,6 +30,10 @@ func (r *router) login(w http.ResponseWriter, request *http.Request) {
 	redirect(w, result.AuthorizationURL)
 }
 
+func (r *router) frontendLocation(path string) string {
+	return r.dependencies.Config.FrontendOrigin + path
+}
+
 func (r *router) callback(w http.ResponseWriter, request *http.Request) {
 	cookie := r.readFlowCookie(request, transactionCookieName)
 	if cookie == "" {
@@ -52,12 +56,12 @@ func (r *router) callback(w http.ResponseWriter, request *http.Request) {
 	switch {
 	case result.Session != nil && result.Selection == nil:
 		http.SetCookie(w, auth.SessionCookie(result.Session.Cookie, r.dependencies.Config.CookieSecure))
-		redirect(w, applicationLocation)
+		redirect(w, r.frontendLocation(applicationLocation))
 	case result.Selection != nil && result.Session == nil:
 		selection := r.flowCookie(selectionCookieName, result.Selection.Cookie)
 		setCookieExpiry(selection, r.dependencies.Now(), result.Selection.ExpiresAt)
 		http.SetCookie(w, selection)
-		redirect(w, organizationSelectionLocation)
+		redirect(w, r.frontendLocation(organizationSelectionLocation))
 	default:
 		WriteError(w, APIError{Status: http.StatusInternalServerError, Code: "internal_error"})
 	}
@@ -130,7 +134,7 @@ func (r *router) selectOrganization(w http.ResponseWriter, request *http.Request
 	}
 	r.clearFlowCookie(w, selectionCookieName)
 	http.SetCookie(w, auth.SessionCookie(session.Cookie, r.dependencies.Config.CookieSecure))
-	redirect(w, applicationLocation)
+	redirect(w, r.frontendLocation(applicationLocation))
 }
 
 func decodeSelectedMemberID(decoder *json.Decoder) (string, error) {

@@ -53,7 +53,7 @@ Task 5 のsession/OIDC repositoryは、既存Request repositoryと同じ `intern
 
 `internal/config.Config` は既に次を検証して提供する。
 
-- `DatabaseURL`、`ListenAddress`、`AllowedOrigin`
+- `DatabaseURL`、`ListenAddress`、`FrontendOrigin`
 - `OIDCIssuer`、`OIDCClientID`、`OIDCRedirectURI`
 - `CookieSecure`
 - 32 byte の `AuthTransactionKey`

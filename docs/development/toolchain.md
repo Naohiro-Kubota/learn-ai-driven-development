@@ -26,6 +26,7 @@ Node.js 26.9.0は現時点の最新stable Current releaseである。LTSを優�
 | UI testing | Vitest / Testing Library / jsdom | 5.0.1 / 16.3.3 / 7.0.1 / 30.1.0 | ADR-006 |
 | Browser E2E | Playwright | 1.63.0 | ADR-006 |
 | TypeScript format/lint | Biome | 2.5.14 | ADR-012 |
+| OpenAPI contract validation only | yaml | 2.9.1 | Task 8.2 |
 | PostgreSQL | pgx stdlib driver | 5.11.0 | ADR-004 |
 | Migration | golang-migrate | 4.20.1 | ADR-004 |
 | OIDC provider | Keycloak | 26.7.4 | ADR-009 |
