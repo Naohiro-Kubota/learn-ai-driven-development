@@ -466,7 +466,8 @@ components:
       schema:
         type: string
         minLength: 1
-      description: Opaque Request identifier.
+        pattern: '^(?!\.{1,2}$)[\s\S]+$'
+      description: Opaque Request identifier. The exact path segments . and .. are excluded because URL and router normalization would address a different endpoint.
   responses:
     InvalidRequest:
       description: Invalid JSON, field validation failure, or invalid request shape.
