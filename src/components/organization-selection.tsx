@@ -30,13 +30,13 @@ export function OrganizationSelection({
 		promise: Promise<Selection>;
 	} | null>(null);
 	useEffect(() => {
+		if (attempted.current) return;
 		let active = true;
 		if (selectionRequest.current?.client !== client) {
 			selectionRequest.current = {
 				client,
 				promise: client.getOrganizationSelection(),
 			};
-			attempted.current = false;
 			setState({ kind: "loading" });
 		}
 		selectionRequest.current.promise.then(

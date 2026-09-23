@@ -46,6 +46,50 @@ function deferred<T>() {
 }
 
 describe("OrganizationSelection", () => {
+	it("keeps a failed selection consumed when the client prop changes", async () => {
+		const firstPost = vi.fn().mockRejectedValue(
+			new ApiError(403, {
+				code: "csrf_validation_failed",
+				message: "Expired",
+			}),
+		);
+		const firstClient = clientWith(
+			vi.fn().mockResolvedValue(choice),
+			firstPost,
+		);
+		const nextGet = vi.fn().mockResolvedValue(choice);
+		const nextPost = vi.fn().mockResolvedValue(undefined);
+		const nextClient = clientWith(nextGet, nextPost);
+		const login = vi.fn();
+		const onSelected = vi.fn();
+		const { rerender } = render(
+			<OrganizationSelection
+				client={firstClient}
+				login={login}
+				onSelected={onSelected}
+			/>,
+		);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "North Office" }),
+		);
+		expect(
+			await screen.findByRole("button", { name: "Sign in" }),
+		).toBeInTheDocument();
+		rerender(
+			<OrganizationSelection
+				client={nextClient}
+				login={login}
+				onSelected={onSelected}
+			/>,
+		);
+		await act(async () => {});
+		expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "North Office" })).toBeNull();
+		expect(nextGet).not.toHaveBeenCalled();
+		expect(nextPost).not.toHaveBeenCalled();
+		expect(firstPost).toHaveBeenCalledOnce();
+	});
+
 	it("reads choices once in StrictMode and posts with that read's current token", async () => {
 		const getOrganizationSelection = vi
 			.fn()
