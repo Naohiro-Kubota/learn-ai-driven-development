@@ -35,6 +35,88 @@ def invoke(command: str, branch: str) -> dict[str, object] | None:
     return json.loads(content) if content else None
 
 
+def invoke_in_worktree(
+    command: str, parent_branch: str, worktree_branch: str
+) -> dict[str, object] | None:
+    parent_cwd = "/workspace/main"
+    worktree_cwd = "/workspace/feature-worktree"
+    event = json.dumps(
+        {
+            "cwd": parent_cwd,
+            "tool_input": {"command": command, "workdir": worktree_cwd},
+        }
+    )
+    output = io.StringIO()
+    with (
+        patch.object(sys, "stdin", io.StringIO(event)),
+        patch.object(
+            HOOK,
+            "current_branch",
+            side_effect=lambda cwd: {
+                parent_cwd: parent_branch,
+                worktree_cwd: worktree_branch,
+            }[cwd],
+        ),
+        redirect_stdout(output),
+    ):
+        HOOK.main()
+
+    content = output.getvalue()
+    return json.loads(content) if content else None
+
+
+def invoke_with_git_c_worktree(
+    command: str, parent_branch: str, worktree_branch: str
+) -> dict[str, object] | None:
+    parent_cwd = "/workspace/main"
+    worktree_cwd = "/workspace/feature-worktree"
+    event = json.dumps({"cwd": parent_cwd, "tool_input": {"command": command}})
+    output = io.StringIO()
+    with (
+        patch.object(sys, "stdin", io.StringIO(event)),
+        patch.object(
+            HOOK,
+            "current_branch",
+            side_effect=lambda cwd: {
+                parent_cwd: parent_branch,
+                worktree_cwd: worktree_branch,
+            }[cwd],
+        ),
+        redirect_stdout(output),
+    ):
+        HOOK.main()
+
+    content = output.getvalue()
+    return json.loads(content) if content else None
+
+
+def invoke_with_workdir_and_git_c_target(
+    command: str, workdir_branch: str, target_branch: str
+) -> dict[str, object] | None:
+    workdir = "/workspace/feature-worktree"
+    target = "/workspace/protected-worktree"
+    event = json.dumps(
+        {
+            "cwd": "/workspace/main",
+            "tool_input": {"command": command, "workdir": workdir},
+        }
+    )
+    output = io.StringIO()
+    with (
+        patch.object(sys, "stdin", io.StringIO(event)),
+        patch.object(
+            HOOK,
+            "current_branch",
+            side_effect=lambda cwd: {workdir: workdir_branch, target: target_branch}[cwd],
+        ),
+        redirect_stdout(output),
+    ):
+        HOOK.main()
+
+    content = output.getvalue()
+    return json.loads(content) if content else None
+
+
 class ProtectBranchesTest(unittest.TestCase):
     def test_denies_git_update_ref_on_protected_branch(self) -> None:
         result = invoke("git update-ref HEAD deadbeef", "develop")
@@ -52,6 +134,52 @@ class ProtectBranchesTest(unittest.TestCase):
 
     def test_allows_git_update_ref_on_feature_branch(self) -> None:
         self.assertIsNone(invoke("git update-ref HEAD deadbeef", "feature/example"))
+
+    def test_allows_mutation_in_feature_worktree_when_parent_is_protected(self) -> None:
+        self.assertIsNone(
+            invoke_in_worktree("git add api/openapi.yaml", "develop", "feature/example")
+        )
+
+    def test_denies_mutation_in_protected_worktree(self) -> None:
+        result = invoke_in_worktree("git add api/openapi.yaml", "feature/example", "develop")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            result["hookSpecificOutput"]["permissionDecision"], "deny"
+        )
+
+    def test_allows_git_c_feature_worktree_when_hook_event_omits_workdir(self) -> None:
+        self.assertIsNone(
+            invoke_with_git_c_worktree(
+                "git -C /workspace/feature-worktree add api/openapi.yaml",
+                "develop",
+                "feature/example",
+            )
+        )
+
+    def test_denies_compound_git_c_command_targeting_protected_worktree(self) -> None:
+        result = invoke_with_git_c_worktree(
+            "git -C /workspace/feature-worktree commit --allow-empty -m test && echo done",
+            "feature/example",
+            "develop",
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            result["hookSpecificOutput"]["permissionDecision"], "deny"
+        )
+
+    def test_denies_git_c_protected_target_from_feature_worktree(self) -> None:
+        result = invoke_with_workdir_and_git_c_target(
+            "git -C /workspace/protected-worktree commit --allow-empty -m test",
+            "feature/example",
+            "develop",
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            result["hookSpecificOutput"]["permissionDecision"], "deny"
+        )
 
     def test_allows_creating_feature_branch_from_develop(self) -> None:
         self.assertIsNone(invoke("git switch -c feature/example develop", "develop"))

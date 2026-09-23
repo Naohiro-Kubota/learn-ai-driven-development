@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/application/requests"
@@ -59,7 +60,77 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	mux.Handle("POST /api/v1/requests/{requestId}/submit", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.submitRequest))))
 	mux.Handle("POST /api/v1/requests/{requestId}/approvals", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.approveRequest))))
 	mux.Handle("GET /api/v1/requests/{requestId}/audit-events", r.RequireSession(http.HandlerFunc(r.listAuditEvents)))
-	return mux
+	return NewCORS(dependencies.Config.FrontendOrigin, mux)
+}
+
+const (
+	allowedCORSMethods = "GET, POST, PATCH, OPTIONS"
+	allowedCORSHeaders = "Content-Type, X-CSRF-Token"
+)
+
+// NewCORS applies the single-origin credentialed CORS policy before route dispatch.
+func NewCORS(allowedOrigin string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		originValues := request.Header.Values("Origin")
+		if len(originValues) == 0 {
+			next.ServeHTTP(w, request)
+			return
+		}
+		if len(originValues) != 1 || originValues[0] != allowedOrigin {
+			WriteError(w, APIError{Status: http.StatusForbidden, Code: "csrf_validation_failed"})
+			return
+		}
+		if request.Method == http.MethodOptions {
+			if !allowedCORSPreflight(request) {
+				WriteError(w, APIError{Status: http.StatusForbidden, Code: "csrf_validation_failed"})
+				return
+			}
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			appendVaryToken(w.Header(), "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", allowedCORSMethods)
+			w.Header().Set("Access-Control-Allow-Headers", allowedCORSHeaders)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		appendVaryToken(w.Header(), "Origin")
+		next.ServeHTTP(w, request)
+	})
+}
+
+func appendVaryToken(header http.Header, token string) {
+	for _, value := range header.Values("Vary") {
+		for _, existing := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(existing), token) {
+				return
+			}
+		}
+	}
+
+	values := header.Values("Vary")
+	values = append(values, token)
+	header.Set("Vary", strings.Join(values, ", "))
+}
+
+func allowedCORSPreflight(request *http.Request) bool {
+	method := request.Header.Get("Access-Control-Request-Method")
+	if method != http.MethodGet && method != http.MethodPost && method != http.MethodPatch {
+		return false
+	}
+	headers := request.Header.Get("Access-Control-Request-Headers")
+	if headers == "" {
+		return true
+	}
+	for _, header := range strings.Split(headers, ",") {
+		switch strings.ToLower(strings.TrimSpace(header)) {
+		case "content-type", "x-csrf-token":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func singleHeader(header http.Header, name string) string {
@@ -71,5 +142,5 @@ func singleHeader(header http.Header, name string) string {
 }
 
 func (r *router) validOrigin(request *http.Request) bool {
-	return r.dependencies.Config.AllowedOrigin != "" && singleHeader(request.Header, "Origin") == r.dependencies.Config.AllowedOrigin
+	return r.dependencies.Config.FrontendOrigin != "" && singleHeader(request.Header, "Origin") == r.dependencies.Config.FrontendOrigin
 }

@@ -1,0 +1,22 @@
+{
+	"realm": "approval-flow-dev",
+	"enabled": true,
+	"sslRequired": "none",
+	"registrationAllowed": false,
+	"clients": [
+		{
+			"clientId": "approval-flow",
+			"name": "Approval Flow local development",
+			"enabled": true,
+			"publicClient": true,
+			"protocol": "openid-connect",
+			"standardFlowEnabled": true,
+			"directAccessGrantsEnabled": false,
+			"attributes": {
+				"pkce.code.challenge.method": "S256"
+			},
+			"redirectUris": ["http://127.0.0.1:8080/auth/oidc/callback"],
+			"webOrigins": ["http://127.0.0.1:5173"]
+		}
+	]
+}
