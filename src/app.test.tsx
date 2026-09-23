@@ -11,7 +11,10 @@ import { ApiError, type ApiClient } from "./api/client";
 import type { Session } from "./api/types";
 import { App } from "./app";
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	window.history.replaceState(null, "", "/");
+});
 
 const session: Session = {
 	actor: { memberId: "member-1", roles: ["requester"] },
@@ -33,6 +36,34 @@ function clientWith(getSession: ApiClient["getSession"]): ApiClient {
 }
 
 describe("App session bootstrap", () => {
+	it("loads organization choices on the selection path without bootstrapping a session", async () => {
+		window.history.replaceState(null, "", "/organization-selection");
+		const getSession = vi.fn();
+		const getOrganizationSelection = vi.fn().mockResolvedValue({
+			candidates: [
+				{
+					memberId: "member-north",
+					organizationId: "north",
+					organizationName: "North Office",
+				},
+			],
+			csrfToken: "selection-secret",
+		});
+		render(
+			<App
+				client={
+					{ getSession, getOrganizationSelection } as unknown as ApiClient
+				}
+				login={vi.fn()}
+			/>,
+		);
+		expect(
+			await screen.findByRole("button", { name: "North Office" }),
+		).toBeInTheDocument();
+		expect(getOrganizationSelection).toHaveBeenCalledOnce();
+		expect(getSession).not.toHaveBeenCalled();
+	});
+
 	it("shows loading until the session resolves, then an authenticated shell", async () => {
 		const pending = deferred<Session>();
 		const getSession = vi.fn().mockReturnValue(pending.promise);
