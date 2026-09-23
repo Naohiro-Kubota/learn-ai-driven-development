@@ -36,6 +36,22 @@ func TestLoadAllowsInsecureCookieOnlyForLoopbackDevelopment(t *testing.T) {
 	if cfg.CookieSecure {
 		t.Fatal("CookieSecure = true")
 	}
+	for _, test := range []struct {
+		name, key, value string
+	}{
+		{"production", "APP_ENV", "production"},
+		{"non-loopback listener", "APP_LISTEN_ADDR", "0.0.0.0:8080"},
+		{"non-loopback frontend", "APP_FRONTEND_ORIGIN", "http://app.example.test"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			original := values[test.key]
+			values[test.key] = test.value
+			t.Cleanup(func() { values[test.key] = original })
+			if _, err := Load(func(key string) string { return values[key] }); err == nil {
+				t.Fatal("Load() accepted insecure cookies outside loopback development")
+			}
+		})
+	}
 }
 
 func TestLoadReadsFrontendOriginAndDoesNotUseAlias(t *testing.T) {
@@ -63,6 +79,8 @@ func TestLoadRejectsInvalidFrontendOrigin(t *testing.T) {
 		"https://app.example.test/path",
 		"https://app.example.test?query=1",
 		"https://app.example.test#fragment",
+		" https://app.example.test",
+		"https://app.example.test ",
 		"https://app.example.test https://other.example.test",
 	} {
 		t.Run(origin, func(t *testing.T) {

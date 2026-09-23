@@ -43,7 +43,8 @@ paths:
       summary: Validate the OIDC callback and establish an application session
       description: |
         The callback consumes the one-time authentication transaction. On success,
-        it issues a new application session cookie and redirects to `/`, or issues
+        it issues a new application session cookie and redirects to the configured
+        frontend origin plus `/`, or issues
         a short-lived Organization-selection cookie and redirects to the
         configured frontend origin plus `/organization-selection` when multiple
         memberships exist. A

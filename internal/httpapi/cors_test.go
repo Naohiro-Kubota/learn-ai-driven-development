@@ -1,9 +1,13 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/auth"
 )
 
 func TestRouterCORSAllowsConfiguredOriginAndPreflightWithoutCallingMux(t *testing.T) {
@@ -43,44 +47,68 @@ func TestRouterCORSAllowsConfiguredOriginAndPreflightWithoutCallingMux(t *testin
 	}
 }
 
-func TestRouterCORSRejectsDisallowedOriginBeforeCallingMux(t *testing.T) {
-	called := false
-	d := testDependencies()
-	h := NewCORS(d.Config.FrontendOrigin, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Origin", "http://evil.example.test")
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, r)
-	if rr.Code != http.StatusForbidden || called {
-		t.Fatalf("status = %d, called = %v", rr.Code, called)
+func TestRouterCORSRejectsInvalidRequestsBeforeCallingMux(t *testing.T) {
+	cases := []struct {
+		name    string
+		method  string
+		headers http.Header
+	}{
+		{"disallowed origin", http.MethodGet, http.Header{"Origin": {"http://evil.example.test"}}},
+		{"duplicate origin", http.MethodGet, http.Header{"Origin": {allowedOrigin, allowedOrigin}}},
+		{"duplicate preflight method", http.MethodOptions, http.Header{"Origin": {allowedOrigin}, "Access-Control-Request-Method": {http.MethodPost, http.MethodDelete}}},
+		{"duplicate preflight headers", http.MethodOptions, http.Header{"Origin": {allowedOrigin}, "Access-Control-Request-Method": {http.MethodPost}, "Access-Control-Request-Headers": {"Content-Type", "Authorization"}}},
+		{"malformed method list", http.MethodOptions, http.Header{"Origin": {allowedOrigin}, "Access-Control-Request-Method": {"POST, DELETE"}}},
+		{"malformed headers list", http.MethodOptions, http.Header{"Origin": {allowedOrigin}, "Access-Control-Request-Method": {http.MethodPost}, "Access-Control-Request-Headers": {"Content-Type,"}}},
+		{"unrecognized method", http.MethodOptions, http.Header{"Origin": {allowedOrigin}, "Access-Control-Request-Method": {http.MethodDelete}}},
+		{"unrecognized header", http.MethodOptions, http.Header{"Origin": {allowedOrigin}, "Access-Control-Request-Method": {http.MethodPost}, "Access-Control-Request-Headers": {"Authorization"}}},
 	}
-	if rr.Header().Get("Access-Control-Allow-Origin") != "" || rr.Header().Get("Access-Control-Allow-Credentials") != "" {
-		t.Fatalf("disallowed response exposes CORS credentials: %v", rr.Header())
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			h := NewCORS(allowedOrigin, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+			r := httptest.NewRequest(tc.method, "/api/v1/requests", nil)
+			r.Header = tc.headers
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, r)
+			if rr.Code != http.StatusForbidden || called {
+				t.Fatalf("status = %d, called = %v", rr.Code, called)
+			}
+			for _, header := range []string{"Access-Control-Allow-Origin", "Access-Control-Allow-Credentials", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers"} {
+				if rr.Header().Get(header) != "" {
+					t.Fatalf("rejected request exposes %s: %v", header, rr.Header())
+				}
+			}
+		})
 	}
 }
 
-func TestRouterCORSRejectsInvalidPreflightBeforeCallingMux(t *testing.T) {
-	called := false
-	h := NewCORS(allowedOrigin, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
-	r := httptest.NewRequest(http.MethodOptions, "/", nil)
-	r.Header.Set("Origin", allowedOrigin)
-	r.Header.Set("Access-Control-Request-Method", http.MethodDelete)
-	r.Header.Set("Access-Control-Request-Headers", "Authorization")
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, r)
-	if rr.Code != http.StatusForbidden || called {
-		t.Fatalf("status = %d, called = %v", rr.Code, called)
+func TestRouterCORSErrorsRemainReadableToAllowedOrigin(t *testing.T) {
+	cases := []struct {
+		name         string
+		request      *http.Request
+		dependencies Dependencies
+		wantStatus   int
+		wantCode     string
+	}{
+		{name: "missing session", request: httptest.NewRequest(http.MethodGet, "/api/v1/session", nil), dependencies: testDependencies(), wantStatus: http.StatusUnauthorized, wantCode: "authentication_required"},
+		{name: "missing CSRF", request: sessionRequest(http.MethodPost, "/api/v1/requests", true), dependencies: func() Dependencies {
+			d := testDependencies()
+			d.SessionStore = fakeSessionStore{authenticate: func(_ context.Context, _ string, _ time.Time) (auth.AuthenticatedSession, error) {
+				return authenticatedSession("token"), nil
+			}}
+			return d
+		}(), wantStatus: http.StatusForbidden, wantCode: "csrf_validation_failed"},
 	}
-	for _, header := range []string{
-		"Access-Control-Allow-Origin",
-		"Access-Control-Allow-Credentials",
-		"Access-Control-Allow-Methods",
-		"Access-Control-Allow-Headers",
-		"Vary",
-	} {
-		if rr.Header().Get(header) != "" {
-			t.Fatalf("rejected preflight exposes %s: %v", header, rr.Header())
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.request.Header.Set("Origin", allowedOrigin)
+			rr := httptest.NewRecorder()
+			NewRouter(tc.dependencies).ServeHTTP(rr, tc.request)
+			assertError(t, rr, tc.wantStatus, tc.wantCode)
+			if rr.Header().Get("Access-Control-Allow-Origin") != allowedOrigin || rr.Header().Get("Access-Control-Allow-Credentials") != "true" || rr.Header().Get("Vary") != "Origin" {
+				t.Fatalf("CORS response headers = %v", rr.Header())
+			}
+		})
 	}
 }
 
