@@ -77,6 +77,63 @@ function mount(
 }
 
 describe("RequestWorkspace", () => {
+	it.each(["create", "update"] as const)(
+		"propagates stale %s authentication_required after selection changes",
+		async (kind) => {
+			let rejectMutation!: (reason: unknown) => void;
+			const delayed = new Promise<Request>((_resolve, reject) => {
+				rejectMutation = reject;
+			});
+			const another = { ...draft, id: "request-2", title: "Other request" };
+			const api = client({
+				getRequest: vi
+					.fn()
+					.mockResolvedValueOnce(draft)
+					.mockResolvedValueOnce(another),
+				[kind === "create" ? "createRequest" : "updateRequest"]: vi
+					.fn()
+					.mockReturnValue(delayed),
+			});
+			const onAuthenticationRequired = vi.fn();
+			const props = {
+				client: api,
+				session,
+				onRequestIdChange: vi.fn(),
+				onSessionChange: vi.fn(),
+				onAuthenticationRequired,
+				onNotice: vi.fn(),
+			};
+			const { rerender } = render(
+				<RequestWorkspace {...props} requestId={draft.id} />,
+			);
+			if (kind === "create") {
+				fireEvent.change(
+					within(
+						screen.getByRole("region", { name: "Create request" }),
+					).getByLabelText("Title"),
+					{ target: { value: "New" } },
+				);
+				fireEvent.click(screen.getByRole("button", { name: "Create Draft" }));
+			} else
+				fireEvent.click(
+					await screen.findByRole("button", { name: "Update Draft" }),
+				);
+			rerender(<RequestWorkspace {...props} requestId={another.id} />);
+			await screen.findByRole("heading", { name: another.title });
+			await act(async () =>
+				rejectMutation(
+					new ApiError(401, {
+						code: "authentication_required",
+						message: "expired",
+					}),
+				),
+			);
+			expect(onAuthenticationRequired).toHaveBeenCalledOnce();
+			expect(
+				screen.queryByRole("region", { name: "Request detail" }),
+			).toBeNull();
+		},
+	);
 	it.each(["submit", "update"] as const)(
 		"ignores a stale %s failure after selecting another Request",
 		async (kind) => {
