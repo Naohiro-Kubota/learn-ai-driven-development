@@ -77,6 +77,96 @@ function mount(
 }
 
 describe("RequestWorkspace", () => {
+	it.each(["submit", "update"] as const)(
+		"ignores a stale %s failure after selecting another Request",
+		async (kind) => {
+			let rejectMutation!: (reason: unknown) => void;
+			const delayed = new Promise<Request>((_resolve, reject) => {
+				rejectMutation = reject;
+			});
+			const another = { ...draft, id: "request-2", title: "Other request" };
+			const getRequest = vi
+				.fn()
+				.mockResolvedValueOnce(draft)
+				.mockResolvedValueOnce(another);
+			const api = client({
+				getRequest,
+				[kind === "submit" ? "submitRequest" : "updateRequest"]: vi
+					.fn()
+					.mockReturnValue(delayed),
+			});
+			const onNotice = vi.fn();
+			const onAuthenticationRequired = vi.fn();
+			const props = {
+				client: api,
+				session,
+				onRequestIdChange: vi.fn(),
+				onSessionChange: vi.fn(),
+				onAuthenticationRequired,
+				onNotice,
+			};
+			const { rerender } = render(
+				<RequestWorkspace {...props} requestId={draft.id} />,
+			);
+			fireEvent.click(
+				await screen.findByRole("button", {
+					name: kind === "submit" ? "Submit" : "Update Draft",
+				}),
+			);
+			rerender(<RequestWorkspace {...props} requestId={another.id} />);
+			await screen.findByRole("heading", { name: another.title });
+			await act(async () =>
+				rejectMutation(
+					new ApiError(409, { code: "version_conflict", message: "stale" }),
+				),
+			);
+			expect(
+				screen.getByRole("heading", { name: another.title }),
+			).toBeInTheDocument();
+			expect(getRequest).toHaveBeenCalledTimes(2);
+			expect(onNotice).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["submit", "update"] as const)(
+		"clears authentication after a post-%s Audit 401",
+		async (kind) => {
+			const api = client({
+				listAuditEvents: vi
+					.fn()
+					.mockResolvedValueOnce([audit])
+					.mockRejectedValueOnce(
+						new ApiError(401, {
+							code: "authentication_required",
+							message: "expired",
+						}),
+					),
+			});
+			const onAuthenticationRequired = vi.fn();
+			render(
+				<RequestWorkspace
+					client={api}
+					session={session}
+					requestId={draft.id}
+					onRequestIdChange={vi.fn()}
+					onSessionChange={vi.fn()}
+					onAuthenticationRequired={onAuthenticationRequired}
+					onNotice={vi.fn()}
+				/>,
+			);
+			fireEvent.click(
+				await screen.findByRole("button", {
+					name: kind === "submit" ? "Submit" : "Update Draft",
+				}),
+			);
+			await waitFor(() =>
+				expect(onAuthenticationRequired).toHaveBeenCalledOnce(),
+			);
+			expect(
+				screen.queryByRole("region", { name: "Request detail" }),
+			).toBeNull();
+		},
+	);
 	it("loads only an Approver's pending queue and selects its opaque ID", async () => {
 		const api = client({
 			listPending: vi

@@ -231,6 +231,7 @@ export function RequestWorkspace({
 		if (errors.length || mutationInFlight.current) return;
 		mutationInFlight.current = true;
 		setPending(true);
+		const currentGeneration = generation.current;
 		client
 			.createRequest(
 				{ title: createTitle.trim(), description: createDescription },
@@ -238,13 +239,17 @@ export function RequestWorkspace({
 			)
 			.then(
 				(request) => {
+					if (generation.current !== currentGeneration) return;
 					setCreateTitle("");
 					setCreateDescription("");
 					setCreateErrors([]);
 					onRequestIdChange(request.id);
 					setRead({ kind: "ready", request, events: [] });
 				},
-				(error: unknown) => handleError(error, setCreateErrors),
+				(error: unknown) => {
+					if (generation.current === currentGeneration)
+						handleError(error, setCreateErrors);
+				},
 			)
 			.finally(() => {
 				mutationInFlight.current = false;
@@ -293,12 +298,19 @@ export function RequestWorkspace({
 									: current,
 							);
 						},
-						() => {
+						(error: unknown) => {
 							if (
 								generation.current !== currentGeneration ||
 								auditRefreshSequence.current !== refresh
 							)
 								return;
+							if (
+								error instanceof ApiError &&
+								error.body.code === "authentication_required"
+							) {
+								void recover(error);
+								return;
+							}
 							setAuditReadFailed(true);
 							onNotice({
 								code: "transport_failure",
@@ -307,7 +319,10 @@ export function RequestWorkspace({
 						},
 					);
 				},
-				(error: unknown) => handleError(error, setEditErrors),
+				(error: unknown) => {
+					if (generation.current === currentGeneration)
+						handleError(error, setEditErrors);
+				},
 			)
 			.finally(() => {
 				mutationInFlight.current = false;
@@ -346,12 +361,19 @@ export function RequestWorkspace({
 									: current,
 							);
 						},
-						() => {
+						(error: unknown) => {
 							if (
 								generation.current !== currentGeneration ||
 								auditRefreshSequence.current !== refresh
 							)
 								return;
+							if (
+								error instanceof ApiError &&
+								error.body.code === "authentication_required"
+							) {
+								void recover(error);
+								return;
+							}
 							setAuditReadFailed(true);
 							onNotice({
 								code: "transport_failure",
@@ -361,7 +383,10 @@ export function RequestWorkspace({
 					);
 					if (session.actor.roles.includes("approver")) loadPending();
 				},
-				(error: unknown) => void recover(error, validId),
+				(error: unknown) => {
+					if (generation.current === currentGeneration)
+						void recover(error, validId);
+				},
 			)
 			.finally(() => {
 				mutationInFlight.current = false;

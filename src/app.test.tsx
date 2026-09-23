@@ -37,6 +37,49 @@ function clientWith(getSession: ApiClient["getSession"]): ApiClient {
 }
 
 describe("App session bootstrap", () => {
+	it("drops the previous actor's Request when a CSRF refresh switches accounts", async () => {
+		window.history.replaceState(null, "", "/?requestId=old-request");
+		const nextSession: Session = {
+			actor: { memberId: "new-member", roles: ["requester"] },
+			csrfToken: "new-token",
+		};
+		const getRequest = vi.fn().mockResolvedValue({
+			id: "old-request",
+			title: "Old actor's private request",
+			description: "",
+			status: "draft",
+			version: 1,
+			requesterMemberId: "member-1",
+			approval: null,
+			createdAt: "now",
+			updatedAt: "now",
+		});
+		const api = {
+			getSession: vi
+				.fn()
+				.mockResolvedValueOnce(session)
+				.mockResolvedValueOnce(nextSession),
+			getRequest,
+			listAuditEvents: vi.fn().mockResolvedValue([]),
+			submitRequest: vi.fn().mockRejectedValue(
+				new ApiError(403, {
+					code: "csrf_validation_failed",
+					message: "expired",
+				}),
+			),
+		} as unknown as ApiClient;
+		render(<App client={api} login={vi.fn()} />);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		await waitFor(() => expect(api.getSession).toHaveBeenCalledTimes(2));
+		await waitFor(() =>
+			expect(screen.queryByText("Old actor's private request")).toBeNull(),
+		);
+		expect(window.location.search).not.toContain("requestId");
+		expect(getRequest).toHaveBeenCalledTimes(1);
+		expect(
+			screen.getByRole("heading", { name: "New request" }),
+		).toBeInTheDocument();
+	});
 	it("logs out with the current token and shows Sign in", async () => {
 		const logout = vi.fn().mockResolvedValue(undefined);
 		render(
