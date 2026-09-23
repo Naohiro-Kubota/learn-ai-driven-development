@@ -544,7 +544,7 @@ git commit -m "feat: expose request approval API"
 - 提供: CIまたはimplementation testの前にOpenAPI YAMLをparseし、local component referenceを確認する`pnpm run verify:openapi`。
 - 提供: PostgreSQL migration、Keycloak起動、必須runtime secret入力、API test commandの再現可能な手順。
 
-- [ ] **Step 1: 失敗するcontract validation testを書く**
+- [x] **Step 1: 失敗するcontract validation testを書く**
 
 契約をloadし、`openapi`が`3.1.`で始まること、全`$ref`値が`components`配下でresolveすること、承認済みoperation/security requirementが残っていることを確認するNode testを追加する。
 
@@ -557,21 +557,21 @@ test("all local OpenAPI references resolve", () => {
 });
 ```
 
-- [ ] **Step 2: testを実行して失敗を確認する**
+- [x] **Step 2: testを実行して失敗を確認する**
 
 Run: `pnpm run verify:openapi`
 
 期待結果: parserとscriptが存在しないためFAIL。
 
-- [ ] **Step 3: 最小の直接開発依存とverification scriptを追加する**
+- [x] **Step 3: 最小の直接開発依存とverification scriptを追加する**
 
 `yaml` v2.9.1を正確な直接`devDependency`として追加し、ADR-007のreview手順に従って`pnpm-lock.yaml`を更新する。`scripts/verify-openapi.mjs`ではこれとNode標準moduleだけを使用する。これはapplication runtime dependencyではなくcontract validation専用のdevelopment dependencyであることを`docs/development/toolchain.md`に記録する。`package.json`へ`verify:openapi`を追加する。
 
-- [ ] **Step 4: 再現可能なlocal API運用手順をdocument化する**
+- [x] **Step 4: 再現可能なlocal API運用手順をdocument化する**
 
 `docs/development/local-api.md`に、PostgreSQLの準備、明示的なmigration適用、外部から与えたtest credentialを使うloopback限定Keycloak development modeの起動、必須OIDC/session暗号化configurationの設定、`cmd/api`の起動、Go unit/integration test、`pnpm run verify:openapi`の実行という正確な順序を記載する。credentialや暗号化鍵をrepositoryへ置かない。
 
-- [ ] **Step 5: 完全なAPI verification suiteを実行する**
+- [x] **Step 5: 完全なAPI verification suiteを実行する**
 
 Run:
 
@@ -591,7 +591,7 @@ git diff --check
 
 期待結果: PASS。integration commandには分離されたPostgreSQL database URLが必要であり、production databaseに対してtestを実行してはならない。
 
-- [ ] **Step 6: このタスクのファイルをcommitする**
+- [x] **Step 6: このタスクのファイルをcommitする**
 
 ```bash
 git add api/openapi.yaml docs/development/toolchain.md docs/development/local-api.md scripts package.json pnpm-lock.yaml
