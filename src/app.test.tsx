@@ -9,7 +9,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StrictMode } from "react";
 import { ApiError, type ApiClient } from "./api/client";
-import type { Session } from "./api/types";
+import type { Request, Session } from "./api/types";
 import { App } from "./app";
 
 afterEach(() => {
@@ -37,6 +37,43 @@ function clientWith(getSession: ApiClient["getSession"]): ApiClient {
 }
 
 describe("App session bootstrap", () => {
+	it("signs out when an earlier Request's Submit returns 401 after selecting another", async () => {
+		window.history.replaceState(null, "", "/?requestId=request-a");
+		const mutation = deferred<Request>();
+		const a: Request = {
+			id: "request-a",
+			title: "A",
+			description: "",
+			status: "draft",
+			version: 1,
+			requesterMemberId: "member-1",
+			approval: null,
+			createdAt: "now",
+			updatedAt: "now",
+		};
+		const b: Request = { ...a, id: "request-b", title: "B" };
+		const api = {
+			getSession: vi.fn().mockResolvedValue(session),
+			getRequest: vi.fn().mockResolvedValueOnce(a).mockResolvedValueOnce(b),
+			listAuditEvents: vi.fn().mockResolvedValue([]),
+			submitRequest: vi.fn().mockReturnValue(mutation.promise),
+		} as unknown as ApiClient;
+		render(<App client={api} login={vi.fn()} />);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		window.history.replaceState(null, "", "/?requestId=request-b");
+		fireEvent.popState(window);
+		await screen.findByRole("heading", { name: "B" });
+		await act(async () =>
+			mutation.reject(
+				new ApiError(401, {
+					code: "authentication_required",
+					message: "expired",
+				}),
+			),
+		);
+		await screen.findByRole("button", { name: "Sign in" });
+		expect(screen.queryByText("Signed in")).toBeNull();
+	});
 	it("drops the previous actor's Request when a CSRF refresh switches accounts", async () => {
 		window.history.replaceState(null, "", "/?requestId=old-request");
 		const nextSession: Session = {

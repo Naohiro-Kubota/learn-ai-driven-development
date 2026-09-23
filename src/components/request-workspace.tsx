@@ -247,6 +247,13 @@ export function RequestWorkspace({
 					setRead({ kind: "ready", request, events: [] });
 				},
 				(error: unknown) => {
+					if (
+						error instanceof ApiError &&
+						error.body.code === "authentication_required"
+					) {
+						void recover(error);
+						return;
+					}
 					if (generation.current === currentGeneration)
 						handleError(error, setCreateErrors);
 				},
@@ -320,6 +327,13 @@ export function RequestWorkspace({
 					);
 				},
 				(error: unknown) => {
+					if (
+						error instanceof ApiError &&
+						error.body.code === "authentication_required"
+					) {
+						void recover(error);
+						return;
+					}
 					if (generation.current === currentGeneration)
 						handleError(error, setEditErrors);
 				},
@@ -384,6 +398,13 @@ export function RequestWorkspace({
 					if (session.actor.roles.includes("approver")) loadPending();
 				},
 				(error: unknown) => {
+					if (
+						error instanceof ApiError &&
+						error.body.code === "authentication_required"
+					) {
+						void recover(error);
+						return;
+					}
 					if (generation.current === currentGeneration)
 						void recover(error, validId);
 				},
