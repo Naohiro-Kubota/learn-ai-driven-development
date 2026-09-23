@@ -21,6 +21,10 @@ export function AuditHistory({
 								<p>{event.requestContent.description || "Empty description"}</p>
 							</>
 						)}
+						{event.approvalAssigneeMemberId && (
+							<p>Assigned approver: {event.approvalAssigneeMemberId}</p>
+						)}
+						{event.approvalId && <p>Approval: {event.approvalId}</p>}
 					</li>
 				))}
 			</ol>

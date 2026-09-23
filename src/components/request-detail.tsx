@@ -7,12 +7,16 @@ export function RequestDetail({
 	onUpdate,
 	onSubmit,
 	onApprove,
+	submitEnabled = false,
+	approveEnabled = false,
 }: {
 	request: Request;
 	actor: Actor;
 	onUpdate: () => void;
 	onSubmit: () => void;
 	onApprove: () => void;
+	submitEnabled?: boolean;
+	approveEnabled?: boolean;
 }): ReactElement {
 	const editable =
 		request.status === "draft" &&
@@ -32,13 +36,13 @@ export function RequestDetail({
 					<button type="button" onClick={onUpdate}>
 						Update Draft
 					</button>
-					<button type="button" onClick={onSubmit}>
+					<button type="button" onClick={onSubmit} disabled={!submitEnabled}>
 						Submit
 					</button>
 				</>
 			)}
 			{approvable && (
-				<button type="button" onClick={onApprove}>
+				<button type="button" onClick={onApprove} disabled={!approveEnabled}>
 					Approve
 				</button>
 			)}

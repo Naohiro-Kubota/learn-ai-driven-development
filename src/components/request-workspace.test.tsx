@@ -1,4 +1,5 @@
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
@@ -52,6 +53,7 @@ function mount(
 	actor = session,
 ) {
 	const onRequestIdChange = vi.fn();
+	const onNotice = vi.fn();
 	const view = render(
 		<RequestWorkspace
 			client={api}
@@ -60,10 +62,10 @@ function mount(
 			onRequestIdChange={onRequestIdChange}
 			onSessionChange={vi.fn()}
 			onAuthenticationRequired={vi.fn()}
-			onNotice={vi.fn()}
+			onNotice={onNotice}
 		/>,
 	);
-	return { ...view, onRequestIdChange };
+	return { ...view, onRequestIdChange, onNotice };
 }
 
 describe("RequestWorkspace", () => {
@@ -190,7 +192,7 @@ describe("RequestWorkspace", () => {
 				"csrf",
 			),
 		);
-		expect(screen.getByRole("button", { name: "Submit" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled();
 	});
 
 	it("shows Approve only for the assigned Approver on Pending", async () => {
@@ -229,8 +231,105 @@ describe("RequestWorkspace", () => {
 		);
 		expect(
 			await screen.findByRole("button", { name: "Approve" }),
-		).toBeInTheDocument();
+		).toBeDisabled();
 		expect(screen.queryByRole("button", { name: "Update Draft" })).toBeNull();
+	});
+
+	it("treats an uncertain create failure as unknown outcome", async () => {
+		const api = client({
+			createRequest: vi.fn().mockRejectedValue(new Error("connection lost")),
+		});
+		const { onNotice } = mount(api);
+		fireEvent.change(screen.getByLabelText("Title"), {
+			target: { value: "VPN" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Create Draft" }));
+		await waitFor(() => expect(onNotice).toHaveBeenCalled());
+		expect(onNotice.mock.calls[0][0].text).toMatch(
+			/outcome.*unknown|could not confirm/i,
+		);
+		expect(onNotice.mock.calls[0][0].text).not.toMatch(/try again/i);
+		expect(screen.getByLabelText("Title")).toHaveValue("VPN");
+	});
+
+	it("offers a read retry when audit refresh fails after a successful update", async () => {
+		const api = client({
+			listAuditEvents: vi
+				.fn()
+				.mockResolvedValueOnce([audit])
+				.mockRejectedValueOnce(new Error("offline"))
+				.mockResolvedValueOnce([audit]),
+		});
+		const { onNotice } = mount(api, draft.id);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Update Draft" }),
+		);
+		fireEvent.click(await screen.findByRole("button", { name: "Retry read" }));
+		await waitFor(() => expect(api.listAuditEvents).toHaveBeenCalledTimes(3));
+		expect(onNotice).toHaveBeenCalled();
+	});
+
+	it("does not let a late post-update audit response overwrite a newer read of the same ID", async () => {
+		let resolveAudit!: (events: AuditEvent[]) => void;
+		const late = new Promise<AuditEvent[]>((resolve) => {
+			resolveAudit = resolve;
+		});
+		const api = client({
+			getRequest: vi.fn().mockResolvedValue(draft),
+			listAuditEvents: vi
+				.fn()
+				.mockResolvedValueOnce([audit])
+				.mockReturnValueOnce(late),
+		});
+		const { rerender } = mount(api, draft.id);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Update Draft" }),
+		);
+		await waitFor(() => expect(api.listAuditEvents).toHaveBeenCalledTimes(2));
+		const fresh = { ...audit, id: "fresh", type: "request_updated" as const };
+		const nextClient = client({
+			listAuditEvents: vi.fn().mockResolvedValue([fresh]),
+		});
+		rerender(
+			<RequestWorkspace
+				client={nextClient}
+				session={session}
+				requestId={draft.id}
+				onRequestIdChange={vi.fn()}
+				onSessionChange={vi.fn()}
+				onAuthenticationRequired={vi.fn()}
+				onNotice={vi.fn()}
+			/>,
+		);
+		expect(
+			await screen.findByText(/request_updated by owner/),
+		).toBeInTheDocument();
+		await act(async () => resolveAudit([audit]));
+		const history = screen.getByRole("region", { name: "Audit history" });
+		expect(
+			within(history).getByText(/request_updated by owner/),
+		).toBeInTheDocument();
+		expect(within(history).queryByText(/request_created by owner/)).toBeNull();
+	});
+
+	it("displays approval assignment identifiers from an audit event", async () => {
+		const api = client({
+			listAuditEvents: vi.fn().mockResolvedValue([
+				{
+					...audit,
+					id: "event-2",
+					type: "request_submitted",
+					approvalAssigneeMemberId: "assignee-1",
+					approvalId: "approval-1",
+				},
+			]),
+		});
+		mount(api, draft.id);
+		const history = await screen.findByRole("region", {
+			name: "Audit history",
+		});
+		expect(within(history).getByText(/assignee-1/)).toBeInTheDocument();
+		expect(within(history).getByText(/approval-1/)).toBeInTheDocument();
 	});
 
 	it("keeps the ID and offers Retry after a failed read", async () => {
