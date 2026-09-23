@@ -6,6 +6,7 @@ import {
 	screen,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
 import { ApiError, type ApiClient } from "../api/client";
 import { OrganizationSelection } from "./organization-selection";
 
@@ -45,6 +46,31 @@ function deferred<T>() {
 }
 
 describe("OrganizationSelection", () => {
+	it("reads choices once in StrictMode and posts with that read's current token", async () => {
+		const getOrganizationSelection = vi
+			.fn()
+			.mockResolvedValueOnce(choice)
+			.mockResolvedValueOnce({ ...choice, csrfToken: "unexpected-rotation" });
+		const selectOrganization = vi.fn().mockResolvedValue(undefined);
+		render(
+			<StrictMode>
+				<OrganizationSelection
+					client={clientWith(getOrganizationSelection, selectOrganization)}
+					login={vi.fn()}
+					onSelected={vi.fn()}
+				/>
+			</StrictMode>,
+		);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "North Office" }),
+		);
+		expect(getOrganizationSelection).toHaveBeenCalledOnce();
+		expect(selectOrganization).toHaveBeenCalledWith(
+			"member-north",
+			"current-selection-csrf",
+		);
+	});
+
 	it("shows candidate names without exposing identifiers or the selection token", async () => {
 		const { container } = render(
 			<OrganizationSelection
