@@ -66,6 +66,7 @@ export function RequestWorkspace({
 	const [read, setRead] = useState<ReadState>({ kind: "empty" });
 	const [auditReadFailed, setAuditReadFailed] = useState(false);
 	const generation = useRef(0);
+	const auditRefreshSequence = useRef(0);
 	const validId =
 		requestId && requestId !== "." && requestId !== ".." ? requestId : null;
 
@@ -165,9 +166,14 @@ export function RequestWorkspace({
 							? { ...current, request }
 							: current,
 					);
+					const refresh = ++auditRefreshSequence.current;
 					client.listAuditEvents(request.id).then(
 						(events) => {
-							if (generation.current !== currentGeneration) return;
+							if (
+								generation.current !== currentGeneration ||
+								auditRefreshSequence.current !== refresh
+							)
+								return;
 							setAuditReadFailed(false);
 							setRead((current) =>
 								current.kind === "ready" && current.request.id === request.id
@@ -176,7 +182,11 @@ export function RequestWorkspace({
 							);
 						},
 						() => {
-							if (generation.current !== currentGeneration) return;
+							if (
+								generation.current !== currentGeneration ||
+								auditRefreshSequence.current !== refresh
+							)
+								return;
 							setAuditReadFailed(true);
 							onNotice({
 								code: "transport_failure",
