@@ -312,6 +312,72 @@ describe("RequestWorkspace", () => {
 		expect(within(history).queryByText(/request_created by owner/)).toBeNull();
 	});
 
+	it.each(["resolve", "reject"] as const)(
+		"ignores the older same-ID audit refresh when it later %s",
+		async (settlement) => {
+			let resolveOlder!: (events: AuditEvent[]) => void;
+			let rejectOlder!: (reason: Error) => void;
+			const older = new Promise<AuditEvent[]>((resolve, reject) => {
+				resolveOlder = resolve;
+				rejectOlder = reject;
+			});
+			const newer = {
+				...audit,
+				id: "newer",
+				type: "request_updated" as const,
+				requestContent: { title: "Newer audit", description: "" },
+			};
+			const olderEvent = {
+				...audit,
+				id: "older",
+				requestContent: { title: "Older audit", description: "" },
+			};
+			const api = client({
+				updateRequest: vi
+					.fn()
+					.mockResolvedValueOnce({ ...draft, version: 4 })
+					.mockResolvedValueOnce({ ...draft, version: 5 }),
+				listAuditEvents: vi
+					.fn()
+					.mockResolvedValueOnce([audit])
+					.mockReturnValueOnce(older)
+					.mockResolvedValueOnce([newer]),
+			});
+			const { onNotice } = mount(api, draft.id);
+			fireEvent.click(
+				await screen.findByRole("button", { name: "Update Draft" }),
+			);
+			await waitFor(() => expect(api.listAuditEvents).toHaveBeenCalledTimes(2));
+			await waitFor(() =>
+				expect(
+					screen.getByRole("button", { name: "Save Draft" }),
+				).not.toBeDisabled(),
+			);
+			fireEvent.click(screen.getByRole("button", { name: "Update Draft" }));
+			await waitFor(() =>
+				expect(api.updateRequest).toHaveBeenLastCalledWith(
+					draft.id,
+					{ title: draft.title, description: "", expectedVersion: 4 },
+					"csrf",
+				),
+			);
+			const history = await screen.findByRole("region", {
+				name: "Audit history",
+			});
+			expect(
+				await within(history).findByText("Newer audit"),
+			).toBeInTheDocument();
+			await act(async () => {
+				if (settlement === "resolve") resolveOlder([olderEvent]);
+				else rejectOlder(new Error("late failure"));
+			});
+			expect(within(history).getByText("Newer audit")).toBeInTheDocument();
+			expect(within(history).queryByText("Older audit")).toBeNull();
+			expect(screen.queryByRole("button", { name: "Retry read" })).toBeNull();
+			expect(onNotice).not.toHaveBeenCalled();
+		},
+	);
+
 	it("displays approval assignment identifiers from an audit event", async () => {
 		const api = client({
 			listAuditEvents: vi.fn().mockResolvedValue([
