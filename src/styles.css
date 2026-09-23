@@ -1,0 +1,81 @@
+:root {
+	font-family: system-ui, sans-serif;
+	color: #162236;
+	background: #f7f9fc;
+}
+body {
+	margin: 0;
+}
+main {
+	box-sizing: border-box;
+	max-width: 68rem;
+	margin: 0 auto;
+	padding: 2rem;
+}
+section {
+	margin-block: 1.5rem;
+}
+section[aria-label="Workspace"] {
+	display: grid;
+	gap: 1rem;
+}
+section[aria-label="Workspace"] > section {
+	background: white;
+	padding: 1.25rem;
+	border: 1px solid #d6deea;
+	border-radius: 0.5rem;
+}
+label {
+	display: block;
+	margin-block: 0.75rem;
+	font-weight: 600;
+}
+input,
+textarea {
+	box-sizing: border-box;
+	display: block;
+	width: 100%;
+	margin-top: 0.35rem;
+	padding: 0.65rem;
+	border: 1px solid #72829b;
+	border-radius: 0.25rem;
+	font: inherit;
+}
+textarea {
+	min-height: 7rem;
+}
+button {
+	margin: 0.25rem 0.5rem 0.25rem 0;
+	padding: 0.55rem 0.8rem;
+	border: 1px solid #365c9a;
+	border-radius: 0.25rem;
+	background: #eaf0fb;
+	color: #102e61;
+	font: inherit;
+	cursor: pointer;
+}
+button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+:focus-visible {
+	outline: 3px solid #a14b00;
+	outline-offset: 2px;
+}
+[role="alert"],
+[role="status"] {
+	padding: 0.75rem;
+	border-left: 0.3rem solid #995f00;
+	background: #fff4d8;
+}
+@media (max-width: 40rem) {
+	main {
+		padding: 1rem;
+	}
+	section[aria-label="Workspace"] > section {
+		padding: 0.85rem;
+	}
+	button {
+		min-height: 2.75rem;
+	}
+}
