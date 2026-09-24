@@ -114,6 +114,10 @@ Accepted状態のDecisionを後から書き換えて履歴を消してはいけ�
 3. 有効な指摘があれば implementer に修正させ、reviewer が再確認する。
 4. レビュー完了前にタスクを完了扱いにしない。
 
+### 7.2. ローカル macOS でのブラウザ E2E
+
+Codex がローカル macOS で `pnpm run test:e2e` を実行する場合、Chromium の起動に必要な権限を最初の実行から要求してください。`exec_command` に `sandbox_permissions: "require_escalated"` と `prefix_rule: ["pnpm", "run", "test:e2e"]` を指定します。承認・自動審査は引き続き適用されます。先に sandbox 内で実行して既知の Chromium 権限エラーを E2E の失敗として記録せず、権限付き実行の実際の結果を報告してください。通常のユーザー端末での実行コマンドは `pnpm run test:e2e` のままです。
+
 ## 8. 依存関係ポリシー
 
 慣れている、あるいは人気があるという理由だけで、新しい本番依存関係を追加してはいけません。
