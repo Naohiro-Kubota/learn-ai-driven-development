@@ -209,6 +209,68 @@ describe("App session bootstrap", () => {
 		expect(screen.queryByText("Signed in")).toBeNull();
 	});
 
+	it.each(["success", "authentication_required"] as const)(
+		"keeps actor B signed in when actor A's pending logout ends with %s",
+		async (outcome) => {
+			window.history.replaceState(null, "", "/?requestId=request-a");
+			const pendingLogout = deferred<void>();
+			const actorB: Session = {
+				actor: { memberId: "member-b", roles: ["requester"] },
+				csrfToken: "csrf-b",
+			};
+			const requestA: Request = {
+				id: "request-a",
+				title: "Actor A request",
+				description: "",
+				status: "draft",
+				version: 1,
+				requesterMemberId: "member-1",
+				approval: null,
+				createdAt: "now",
+				updatedAt: "now",
+			};
+			const api = {
+				getSession: vi
+					.fn()
+					.mockResolvedValueOnce(session)
+					.mockResolvedValueOnce(actorB),
+				getRequest: vi.fn().mockResolvedValue(requestA),
+				listAuditEvents: vi.fn().mockResolvedValue([]),
+				submitRequest: vi.fn().mockRejectedValue(
+					new ApiError(403, {
+						code: "csrf_validation_failed",
+						message: "stale",
+					}),
+				),
+				logout: vi.fn().mockReturnValue(pendingLogout.promise),
+			} as unknown as ApiClient;
+			render(<App client={api} login={vi.fn()} />);
+			fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
+			fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+			await waitFor(() => expect(api.getSession).toHaveBeenCalledTimes(2));
+			await waitFor(() =>
+				expect(screen.queryByText("Actor A request")).toBeNull(),
+			);
+			expect(screen.getByText("Signed in")).toBeInTheDocument();
+			expect(screen.getByRole("button", { name: "Log out" })).toBeEnabled();
+			if (outcome === "success") {
+				await act(async () => pendingLogout.resolve());
+			} else {
+				await act(async () =>
+					pendingLogout.reject(
+						new ApiError(401, {
+							code: "authentication_required",
+							message: "actor A expired",
+						}),
+					),
+				);
+			}
+			expect(screen.getByText("Signed in")).toBeInTheDocument();
+			expect(screen.getByRole("button", { name: "Log out" })).toBeEnabled();
+			expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+		},
+	);
+
 	it("uses the refreshed token only after another explicit logout click", async () => {
 		const logout = vi
 			.fn()

@@ -44,6 +44,8 @@ export function App({
 	const logoutInFlight = useRef(false);
 	const advanceWorkspaceEpoch = useCallback(() => {
 		workspaceEpochRef.current++;
+		logoutInFlight.current = false;
+		setLogoutPending(false);
 		setWorkspaceEpoch(workspaceEpochRef.current);
 	}, []);
 	const onAuthenticationRequired = useCallback(() => {
@@ -155,13 +157,18 @@ export function App({
 	}
 	const logout = () => {
 		if (logoutInFlight.current) return;
+		const epoch = workspaceEpochRef.current;
+		const isCurrentSession = () => workspaceEpochRef.current === epoch;
 		logoutInFlight.current = true;
 		setLogoutPending(true);
 		client
 			.logout(sessionState.session.csrfToken)
 			.then(
-				() => onAuthenticationRequired(),
+				() => {
+					if (isCurrentSession()) onAuthenticationRequired();
+				},
 				async (error: unknown) => {
+					if (!isCurrentSession()) return;
 					if (
 						error instanceof ApiError &&
 						error.body.code === "authentication_required"
@@ -175,12 +182,15 @@ export function App({
 					) {
 						try {
 							const refreshed = await client.getSession();
+							if (!isCurrentSession()) return;
 							onSessionChange(refreshed);
+							if (!isCurrentSession()) return;
 							setNotice({
 								code: "csrf_validation_failed",
 								text: "Session token refreshed. Click Log out again if you still want to sign out.",
 							});
 						} catch (refreshError) {
+							if (!isCurrentSession()) return;
 							if (
 								refreshError instanceof ApiError &&
 								refreshError.body.code === "authentication_required"
@@ -205,6 +215,7 @@ export function App({
 				},
 			)
 			.finally(() => {
+				if (!isCurrentSession()) return;
 				logoutInFlight.current = false;
 				setLogoutPending(false);
 			});
