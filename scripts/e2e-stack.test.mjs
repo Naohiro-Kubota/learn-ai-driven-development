@@ -301,3 +301,56 @@ test("prints only validated Playwright diagnostic fields from mixed raw output",
 	);
 	assert.equal(log.join(" ").includes("private-sentinel"), false);
 });
+
+test("waits for a trailing diagnostic after Playwright exit", async () => {
+	const { deps, log } = fakeDeps({ playwrightExit: 1 });
+	const originalSpawn = deps.spawn;
+	deps.spawn = (command, args, options) => {
+		if (!args.includes("playwright"))
+			return originalSpawn(command, args, options);
+		const child = new EventEmitter();
+		child.stdout = new PassThrough();
+		child.stderr = new PassThrough();
+		child.kill = () => {};
+		queueMicrotask(() => child.emit("exit", 1));
+		setTimeout(() => {
+			child.stdout.end(
+				'E2E_DIAGNOSTIC:{"phase":"callback","status":400,"code":"invalid_auth_transaction","cookiePresent":false,"pathname":"/auth/oidc/callback"}\n',
+			);
+			child.stderr.end();
+		}, 10);
+		return child;
+	};
+	await assert.rejects(runStack(deps), /Playwright/);
+	assert.equal(
+		log.some((line) => line.includes("code=invalid_auth_transaction")),
+		true,
+	);
+});
+
+test("discards the full oversized physical line including marker suffix", async () => {
+	const { deps, log } = fakeDeps({ playwrightExit: 1 });
+	const originalSpawn = deps.spawn;
+	deps.spawn = (command, args, options) => {
+		if (!args.includes("playwright"))
+			return originalSpawn(command, args, options);
+		const child = new EventEmitter();
+		child.stdout = new PassThrough();
+		child.stderr = new PassThrough();
+		child.kill = () => {};
+		queueMicrotask(() => {
+			child.stdout.write("x".repeat(2050));
+			child.stdout.end(
+				'E2E_DIAGNOSTIC:{"phase":"callback","status":400,"code":"invalid_auth_transaction","cookiePresent":false,"pathname":"/"}\n',
+			);
+			child.stderr.end();
+			child.emit("exit", 1);
+		});
+		return child;
+	};
+	await assert.rejects(runStack(deps), /Playwright/);
+	assert.deepEqual(
+		log.filter((line) => line.startsWith("E2E diagnostic:")),
+		[],
+	);
+});

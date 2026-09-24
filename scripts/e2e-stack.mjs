@@ -97,22 +97,49 @@ function validatedDiagnostic(line) {
 }
 
 function collectDiagnosticLines(stream, emit) {
-	if (!stream) return;
+	if (!stream) return Promise.resolve();
 	stream.setEncoding("utf8");
 	let pending = "";
-	stream.on("data", (chunk) => {
-		pending += chunk;
-		let newline = pending.indexOf("\n");
-		while (newline >= 0) {
-			const line = pending.slice(0, newline);
-			if (line.length <= 2048) {
-				const diagnostic = validatedDiagnostic(line);
+	let discard = false;
+	const append = (part, newline) => {
+		if (!discard) {
+			if (pending.length + part.length > 2048) {
+				pending = "";
+				discard = true;
+			} else {
+				pending += part;
+			}
+		}
+		if (newline) {
+			if (!discard) {
+				const diagnostic = validatedDiagnostic(pending);
 				if (diagnostic) emit(diagnostic);
 			}
-			pending = pending.slice(newline + 1);
-			newline = pending.indexOf("\n");
+			pending = "";
+			discard = false;
 		}
-		if (pending.length > 2048) pending = "";
+	};
+	stream.on("data", (chunk) => {
+		let start = 0;
+		let newline = chunk.indexOf("\n", start);
+		while (newline !== -1) {
+			append(chunk.slice(start, newline), true);
+			start = newline + 1;
+			newline = chunk.indexOf("\n", start);
+		}
+		append(chunk.slice(start), false);
+	});
+	return new Promise((resolve) => {
+		let settled = false;
+		const finish = () => {
+			if (settled) return;
+			settled = true;
+			if (!discard && pending) append("", true);
+			resolve();
+		};
+		stream.once("end", finish);
+		stream.once("close", finish);
+		stream.once("error", finish);
 	});
 }
 
@@ -164,10 +191,12 @@ async function command(spawnProcess, name, args, options = {}) {
 		...spawnOptions,
 	});
 	onStart?.(child);
-	if (onDiagnostic) {
-		collectDiagnosticLines(child.child.stdout, onDiagnostic);
-		collectDiagnosticLines(child.child.stderr, onDiagnostic);
-	}
+	const diagnosticStreams = onDiagnostic
+		? Promise.all([
+				collectDiagnosticLines(child.child.stdout, onDiagnostic),
+				collectDiagnosticLines(child.child.stderr, onDiagnostic),
+			])
+		: undefined;
 	let output = "";
 	if (capture && child.child.stdout) {
 		child.child.stdout.setEncoding("utf8");
@@ -178,6 +207,16 @@ async function command(spawnProcess, name, args, options = {}) {
 	}
 	if (input !== undefined && child.child.stdin) child.child.stdin.end(input);
 	const result = await child.done;
+	if (diagnosticStreams) {
+		let timeout;
+		await Promise.race([
+			diagnosticStreams,
+			new Promise((resolve) => {
+				timeout = setTimeout(resolve, 2000);
+			}),
+		]);
+		clearTimeout(timeout);
+	}
 	if (result.code !== 0) {
 		const error = new Error(`${name} command failed`);
 		error.exitCode = result.code ?? 1;
