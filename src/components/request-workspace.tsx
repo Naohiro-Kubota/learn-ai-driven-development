@@ -93,38 +93,46 @@ export function RequestWorkspace({
 			auditRefreshSequence.current++;
 			setAuditReadFailed(false);
 			setRead({ kind: "loading" });
+			let request: Request | null = null;
+			let events: AuditEvent[] | null = null;
+			let failed = false;
 			let authenticationHandled = false;
-			const checkAuthentication = (error: unknown): never => {
+			const finishIfReady = () => {
 				if (
-					generation.current === current &&
+					generation.current !== current ||
+					failed ||
+					request === null ||
+					events === null
+				)
+					return;
+				setRead({ kind: "ready", request, events });
+				setEditTitle(request.title);
+				setEditDescription(request.description);
+			};
+			const handleFailure = (error: unknown) => {
+				if (generation.current !== current) return;
+				if (
 					!authenticationHandled &&
 					error instanceof ApiError &&
 					error.body.code === "authentication_required"
 				) {
 					authenticationHandled = true;
+					failed = true;
 					setRead({ kind: "empty" });
 					onAuthenticationRequired();
-				}
-				throw error;
-			};
-			Promise.allSettled([
-				client.getRequest(id).catch(checkAuthentication),
-				client.listAuditEvents(id).catch(checkAuthentication),
-			]).then(([requestResult, eventsResult]) => {
-				if (generation.current !== current || authenticationHandled) return;
-				if (
-					requestResult.status === "rejected" ||
-					eventsResult.status === "rejected"
-				) {
+				} else if (!failed) {
+					failed = true;
 					setRead({ kind: "error" });
-					return;
 				}
-				const request = requestResult.value;
-				const events = eventsResult.value;
-				setRead({ kind: "ready", request, events });
-				setEditTitle(request.title);
-				setEditDescription(request.description);
-			});
+			};
+			client.getRequest(id).then((value) => {
+				request = value;
+				finishIfReady();
+			}, handleFailure);
+			client.listAuditEvents(id).then((value) => {
+				events = value;
+				finishIfReady();
+			}, handleFailure);
 		},
 		[client, onAuthenticationRequired],
 	);

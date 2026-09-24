@@ -77,6 +77,62 @@ function mount(
 }
 
 describe("RequestWorkspace", () => {
+	it.each([
+		["request", "network"],
+		["request", "404"],
+		["audit", "network"],
+		["audit", "404"],
+	] as const)(
+		"shows Retry for a %s read %s failure while the other hangs, then prioritizes its later 401",
+		async (failingRead, failureKind) => {
+			let rejectCompanion!: (reason: unknown) => void;
+			const companion = new Promise<never>((_resolve, reject) => {
+				rejectCompanion = reject;
+			});
+			const failure =
+				failureKind === "404"
+					? new ApiError(404, { code: "request_not_found", message: "missing" })
+					: new Error("offline");
+			const onAuthenticationRequired = vi.fn();
+			const api = client({
+				getRequest: vi
+					.fn()
+					.mockImplementation(() =>
+						failingRead === "request" ? Promise.reject(failure) : companion,
+					),
+				listAuditEvents: vi
+					.fn()
+					.mockImplementation(() =>
+						failingRead === "audit" ? Promise.reject(failure) : companion,
+					),
+			});
+			render(
+				<RequestWorkspace
+					client={api}
+					session={session}
+					requestId={draft.id}
+					onRequestIdChange={vi.fn()}
+					onSessionChange={vi.fn()}
+					onAuthenticationRequired={onAuthenticationRequired}
+					onNotice={vi.fn()}
+				/>,
+			);
+			await screen.findByRole("button", { name: "Retry" });
+			expect(onAuthenticationRequired).not.toHaveBeenCalled();
+			await act(async () =>
+				rejectCompanion(
+					new ApiError(401, {
+						code: "authentication_required",
+						message: "expired",
+					}),
+				),
+			);
+			await waitFor(() =>
+				expect(onAuthenticationRequired).toHaveBeenCalledOnce(),
+			);
+			expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+		},
+	);
 	it("reports authentication_required only once when both reads return 401", async () => {
 		const unauthorized = new ApiError(401, {
 			code: "authentication_required",
