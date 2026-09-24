@@ -110,7 +110,14 @@ func toAuditEventListDTO(events []domain.AuditEvent) auditEventListDTO {
 func requestAPIError(err error) APIError {
 	switch {
 	case errors.Is(err, domain.ErrInvalidRequest):
-		return APIError{Status: 400, Code: "invalid_request"}
+		apiErr := APIError{Status: 400, Code: "invalid_request"}
+		var validation *domain.ValidationError
+		if errors.As(err, &validation) {
+			for _, violation := range validation.Fields {
+				apiErr.FieldErrors = append(apiErr.FieldErrors, fieldErrorDTO{Field: violation.Field, Code: violation.Code, Message: fieldErrorMessage(violation)})
+			}
+		}
+		return apiErr
 	case errors.Is(err, domain.ErrForbidden):
 		return APIError{Status: 403, Code: "forbidden"}
 	case errors.Is(err, domain.ErrNotFound):
@@ -123,5 +130,22 @@ func requestAPIError(err error) APIError {
 		return APIError{Status: 409, Code: "approval_routing_unavailable"}
 	default:
 		return APIError{Status: 500, Code: "internal_error"}
+	}
+}
+
+func fieldErrorMessage(violation domain.FieldViolation) string {
+	switch violation {
+	case domain.FieldViolation{Field: "title", Code: "required"}:
+		return "Title must not be blank."
+	case domain.FieldViolation{Field: "title", Code: "too_long"}:
+		return "Title must be at most 120 characters."
+	case domain.FieldViolation{Field: "description", Code: "too_long"}:
+		return "Description must be at most 2000 characters."
+	case domain.FieldViolation{Field: "description", Code: "required"}:
+		return "Description is required."
+	case domain.FieldViolation{Field: "expectedVersion", Code: "required"}:
+		return "Expected version is required."
+	default:
+		return "Invalid field value."
 	}
 }

@@ -110,6 +110,17 @@ func TestRequestAPIErrorMapsDomainErrorsAndHidesWrappedDetails(t *testing.T) {
 	}
 }
 
+func TestRequestAPIErrorMapsFieldViolations(t *testing.T) {
+	err := &domain.ValidationError{Fields: []domain.FieldViolation{{Field: "title", Code: "required"}, {Field: "description", Code: "too_long"}}}
+	got := requestAPIError(err)
+	if got.Status != 400 || got.Code != "invalid_request" || len(got.FieldErrors) != 2 {
+		t.Fatalf("requestAPIError() = %#v", got)
+	}
+	if got.FieldErrors[0] != (fieldErrorDTO{Field: "title", Code: "required", Message: "Title must not be blank."}) || got.FieldErrors[1] != (fieldErrorDTO{Field: "description", Code: "too_long", Message: "Description must be at most 2000 characters."}) {
+		t.Fatalf("field errors = %#v", got.FieldErrors)
+	}
+}
+
 func TestWriteErrorUsesDocumentedRequestMessages(t *testing.T) {
 	for _, tc := range []struct {
 		code, message string

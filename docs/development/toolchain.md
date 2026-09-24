@@ -2,7 +2,7 @@
 
 Status: Accepted ADR configuration
 
-この文書は、Accepted ADR-001、ADR-002、ADR-004、ADR-006、ADR-007、ADR-009、ADR-010、ADR-012、ADR-015に基づく初回Sliceの再現可能なtoolchain基準です。versionは2026-09-21時点の最新安定版として固定します。更新は依存関係ポリシーとADR-007のレビュー手順に従って行います。
+この文書は、Accepted ADR-001、ADR-002、ADR-004、ADR-006、ADR-007、ADR-009、ADR-010、ADR-012、ADR-015、ADR-017に基づく初回Sliceの再現可能なtoolchain基準です。versionは2026-09-21時点の最新安定版として固定します。更新は依存関係ポリシーとADR-007のレビュー手順に従って行います。
 
 ## Toolchain
 
@@ -41,7 +41,18 @@ Go sourceはADR-012に従い`gofmt`でformatし、`go vet ./...`で静的解析�
 - pnpmの`minimumReleaseAge`、`blockExoticSubdeps`、`strictStorePkgContentCheck`、`strictDepBuilds`、`allowBuilds`は`pnpm-workspace.yaml`を正本とする。
 - Go moduleは`go.mod`と`go.sum`をコミットする。依存更新はGo module versionと間接依存の差分をレビューする。
 - Keycloak imageはtagだけで運用せず、provisioning時に対応するcontainer digestを記録する。development modeはローカル/E2E限定である。
-- PostgreSQL migration統合テストは`pnpm run test:db`を使用する。これは`compose.test.yaml`で一時的なPostgreSQL 17.11 containerを起動し、`TEST_DATABASE_URL`を注入してから、終了時にcontainerとvolumeを破棄する。
+- PostgreSQL migration統合テストは`pnpm run test:db`を使用する。これは実行ごとにDBパスワードを生成し、`compose.test.yaml`で一時的なPostgreSQL 17.11 containerを起動して`TEST_DATABASE_URL`を注入した後、containerとvolumeを破棄する。
+
+## CI
+
+`.github/workflows/ci.yaml` は ADR-017 に従い、pull request の `opened`、`synchronize`（追加commitなどによる更新）、`reopened` イベントで起動する。pull requestのないbranch pushでは起動しない。各jobはUbuntu 24.04の別runnerで実行されるため、PostgreSQL統合テストと固定portを使うbrowser E2Eは競合しない。
+
+- Frontend and contract: frozen install、OpenAPI、非破壊format/lint、型チェック、Vitest、Node script tests、E2E runner unit test、Keycloak provisioning shell test、buildを個別stepで検査する。
+- Go static and unit: gofmt、vet、DBを使わないGo test、module verifyを個別stepで検査する。
+- PostgreSQL integration: `pnpm run test:db`。使い捨てcredentialを生成し、test runnerとworkflowの終了処理でcontainer/volumeを削除する。
+- Browser E2E: frozen install後にChromiumとLinux依存を導入し、`pnpm run test:e2e`を実行する。E2E runnerが使い捨てcredentialを生成して自分のDocker projectと一時ファイルを削除する。
+
+GitHub Actionsの`permissions`は`contents: read`のみで、外部actionを完全なcommit SHAで固定する。format、lint、OpenAPI、frozen install後にtracked fileが変わっていないことも検査する。CI失敗時にbase branchへのmergeを禁止するには、GitHub上でPRの最新commitに必須status checkを要求するbranch保護を別途設定する。
 
 ## Frontend Task 3 の起動と検証
 

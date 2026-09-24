@@ -170,8 +170,17 @@ func (a Actor) hasRole(want domain.Role) bool {
 }
 func validateContent(title, description string) (string, error) {
 	title = strings.TrimSpace(title)
-	if title == "" || len([]rune(title)) > maxTitleLength || len([]rune(description)) > maxDescriptionLength {
-		return "", domain.ErrInvalidRequest
+	var fields []domain.FieldViolation
+	if title == "" {
+		fields = append(fields, domain.FieldViolation{Field: "title", Code: "required"})
+	} else if len([]rune(title)) > maxTitleLength {
+		fields = append(fields, domain.FieldViolation{Field: "title", Code: "too_long"})
+	}
+	if len([]rune(description)) > maxDescriptionLength {
+		fields = append(fields, domain.FieldViolation{Field: "description", Code: "too_long"})
+	}
+	if len(fields) > 0 {
+		return "", &domain.ValidationError{Fields: fields}
 	}
 	return title, nil
 }
