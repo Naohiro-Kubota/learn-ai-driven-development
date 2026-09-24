@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const frontendOrigin = "http://127.0.0.1:5173";
@@ -155,6 +158,7 @@ export async function runStack(deps = {}) {
 			throw new Error(`E2E port ${port} is occupied`);
 	}
 	const project = `approval-flow-e2e-${random(8).toString("hex")}`;
+	const goCache = await mkdtemp(join(tmpdir(), "approval-flow-e2e-go-cache-"));
 	const password = random(24).toString("base64url");
 	const dbPassword = random(24).toString("base64url");
 	const adminPassword = random(24).toString("base64url");
@@ -174,6 +178,7 @@ export async function runStack(deps = {}) {
 		VITE_API_ORIGIN: apiOrigin,
 		E2E_TEST_PASSWORD: password,
 		GOTOOLCHAIN: "go1.27.1",
+		GOCACHE: goCache,
 	};
 	const compose = ["compose", "-p", project, "-f", "compose.e2e.yaml"];
 	const controller = new AbortController();
@@ -275,6 +280,14 @@ export async function runStack(deps = {}) {
 				[failure, ...cleanupErrors].filter(Boolean),
 				"E2E cleanup failed",
 			);
+		try {
+			await rm(goCache, { recursive: true, force: true });
+		} catch (error) {
+			failure = new AggregateError(
+				[failure, error].filter(Boolean),
+				"E2E cleanup failed",
+			);
+		}
 		process.off("SIGINT", onSignal);
 		process.off("SIGTERM", onSignal);
 	}
