@@ -166,6 +166,15 @@ export async function runStack(deps = {}) {
 	}
 	const project = `approval-flow-e2e-${random(8).toString("hex")}`;
 	const goCache = await mkdtemp(join(tmpdir(), "approval-flow-e2e-go-cache-"));
+	let playwrightOutputDir;
+	try {
+		playwrightOutputDir = await mkdtemp(
+			join(tmpdir(), "approval-flow-e2e-playwright-"),
+		);
+	} catch (error) {
+		await rm(goCache, { recursive: true, force: true });
+		throw error;
+	}
 	const password = random(24).toString("base64url");
 	const dbPassword = random(24).toString("base64url");
 	const adminPassword = random(24).toString("base64url");
@@ -189,6 +198,7 @@ export async function runStack(deps = {}) {
 		E2E_TEST_PASSWORD: password,
 		GOTOOLCHAIN: "go1.27.1",
 		GOCACHE: goCache,
+		E2E_PLAYWRIGHT_OUTPUT_DIR: playwrightOutputDir,
 	};
 	const compose = ["compose", "-p", project, "-f", "compose.e2e.yaml"];
 	const controller = new AbortController();
@@ -292,13 +302,15 @@ export async function runStack(deps = {}) {
 				[failure, ...cleanupErrors].filter(Boolean),
 				"E2E cleanup failed",
 			);
-		try {
-			await rm(goCache, { recursive: true, force: true });
-		} catch (error) {
-			failure = new AggregateError(
-				[failure, error].filter(Boolean),
-				"E2E cleanup failed",
-			);
+		for (const directory of [playwrightOutputDir, goCache]) {
+			try {
+				await rm(directory, { recursive: true, force: true });
+			} catch (error) {
+				failure = new AggregateError(
+					[failure, error].filter(Boolean),
+					"E2E cleanup failed",
+				);
+			}
 		}
 		process.off("SIGINT", onSignal);
 		process.off("SIGTERM", onSignal);
