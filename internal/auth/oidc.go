@@ -85,7 +85,7 @@ func NewOIDCAuthenticator(ctx context.Context, cfg config.Config, transactions t
 	if err != nil {
 		return nil, err
 	}
-	return &Authenticator{transactions: transactions, now: now, config: cfg, oauth: oauth2.Config{ClientID: cfg.OIDCClientID, Endpoint: provider.Endpoint(), RedirectURL: cfg.OIDCRedirectURI}, verifier: provider.Verifier(&oidc.Config{ClientID: cfg.OIDCClientID})}, nil
+	return &Authenticator{transactions: transactions, now: now, config: cfg, oauth: oauth2.Config{ClientID: cfg.OIDCClientID, Endpoint: provider.Endpoint(), RedirectURL: cfg.OIDCRedirectURI, Scopes: []string{oidc.ScopeOpenID}}, verifier: provider.Verifier(&oidc.Config{ClientID: cfg.OIDCClientID})}, nil
 }
 
 func (a *Authenticator) CompleteLogin(ctx context.Context, input CallbackInput) (LoginResult, error) {
