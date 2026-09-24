@@ -103,6 +103,10 @@ export async function provisionE2E({ exec, issuer, password, project, env }) {
 				"enabled=true",
 				"-s",
 				`email=${username}@approval-flow.invalid`,
+				"-s",
+				"firstName=E2E",
+				"-s",
+				`lastName=${username[0].toUpperCase()}${username.slice(1)}`,
 			]);
 			await kcadm(["set-password", "-r", realm, "--username", username], {
 				secret: password,

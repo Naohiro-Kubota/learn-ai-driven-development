@@ -124,3 +124,25 @@ test("passes the Keycloak config option after each command", async () => {
 		assert.ok(args.indexOf("--config") > command);
 	}
 });
+
+test("creates complete Keycloak profiles so login needs no profile action", async () => {
+	const { calls, exec } = harness();
+	await provisionE2E({ ...options, exec });
+	const created = calls.filter(
+		({ args }) => args.includes("create") && args.includes("users"),
+	);
+	assert.equal(created.length, 3);
+	for (const { args } of created) {
+		assert.ok(
+			args.some(
+				(arg) =>
+					arg.startsWith("firstName=") && arg.length > "firstName=".length,
+			),
+		);
+		assert.ok(
+			args.some(
+				(arg) => arg.startsWith("lastName=") && arg.length > "lastName=".length,
+			),
+		);
+	}
+});
