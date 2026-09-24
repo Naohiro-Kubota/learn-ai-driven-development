@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import { runStack } from "./e2e-stack.mjs";
@@ -84,4 +85,110 @@ test("runner does not print secrets or pass them as command arguments", async ()
 		calls.some((call) => call.options.stdio === "inherit"),
 		false,
 	);
+});
+
+test("stops a detached service group after its wrapper exits, escalating if descendants survive", async () => {
+	const { deps, calls } = fakeDeps();
+	const groups = new Set([4101]);
+	const signals = [];
+	const originalSpawn = deps.spawn;
+	deps.spawn = (command, args, options) => {
+		const child = originalSpawn(command, args, options);
+		if (command === "go" && args[1] === "./cmd/api") {
+			child.pid = 4101;
+			queueMicrotask(() => child.emit("exit", 0));
+		}
+		return child;
+	};
+	deps.signalProcess = (pid, signal) => {
+		signals.push([pid, signal]);
+		if (signal === "SIGKILL") groups.delete(-pid);
+	};
+	deps.processGroupExists = (pid) => groups.has(pid);
+	deps.stopGraceMs = 0;
+	await assert.rejects(runStack(deps), /exited before readiness/);
+	assert.deepEqual(signals, [
+		[-4101, "SIGTERM"],
+		[-4101, "SIGKILL"],
+	]);
+	assert.equal(calls.at(-1).args.includes("down"), true);
+});
+
+test("removes a real descendant after its detached wrapper exits", {
+	skip: process.platform === "win32",
+}, async () => {
+	const { deps } = fakeDeps();
+	const originalSpawn = deps.spawn;
+	let groupPid;
+	deps.spawn = (command, args, options) => {
+		if (command === "go" && args[1] === "./cmd/api") {
+			const script = [
+				'const { spawn } = require("node:child_process");',
+				'spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });',
+				"setTimeout(() => process.exit(0), 20);",
+			].join(" ");
+			const wrapper = spawn(process.execPath, ["-e", script], {
+				stdio: "ignore",
+				detached: true,
+			});
+			groupPid = wrapper.pid;
+			return wrapper;
+		}
+		return originalSpawn(command, args, options);
+	};
+	deps.fetch = async (url) => ({
+		status: url.includes("/api/v1/session") ? 503 : 200,
+	});
+	await assert.rejects(runStack(deps), /exited before readiness/);
+	assert.ok(groupPid > 0);
+	await new Promise((resolve) => setTimeout(resolve, 100));
+	assert.throws(() => process.kill(-groupPid, 0), { code: "ESRCH" });
+});
+
+test("stops detached Playwright descendants after its wrapper exits", async () => {
+	const { deps } = fakeDeps();
+	const groups = new Set([4202]);
+	const signals = [];
+	const originalSpawn = deps.spawn;
+	deps.spawn = (command, args, options) => {
+		const child = originalSpawn(command, args, options);
+		if (args.includes("playwright")) child.pid = 4202;
+		return child;
+	};
+	deps.signalProcess = (pid, signal) => {
+		signals.push([pid, signal]);
+		groups.delete(-pid);
+	};
+	deps.processGroupExists = (pid) => groups.has(pid);
+	await runStack(deps);
+	assert.deepEqual(signals, [[-4202, "SIGTERM"]]);
+});
+
+test("keeps signal handlers installed until compose down completes", async () => {
+	const { deps, calls } = fakeDeps({ playwrightExit: 1 });
+	const priorTerm = process.listenerCount("SIGTERM");
+	const priorInt = process.listenerCount("SIGINT");
+	const originalSpawn = deps.spawn;
+	deps.spawn = (command, args, options) => {
+		if (args.includes("down")) {
+			assert.equal(process.listenerCount("SIGTERM"), priorTerm + 1);
+			assert.equal(process.listenerCount("SIGINT"), priorInt + 1);
+			process.emit("SIGTERM");
+			process.emit("SIGINT");
+		}
+		return originalSpawn(command, args, options);
+	};
+	await assert.rejects(runStack(deps), /Playwright/);
+	assert.equal(calls.at(-1).args.includes("down"), true);
+	assert.equal(process.listenerCount("SIGTERM"), priorTerm);
+	assert.equal(process.listenerCount("SIGINT"), priorInt);
+});
+
+test("preserves Playwright's nonzero exit code", async () => {
+	const { deps } = fakeDeps({ playwrightExit: 2 });
+	await assert.rejects(runStack(deps), (error) => {
+		assert.match(error.message, /Playwright/);
+		assert.equal(error.exitCode, 2);
+		return true;
+	});
 });
