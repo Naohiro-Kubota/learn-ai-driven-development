@@ -4,6 +4,8 @@
 
 実 OIDC と別 browser context による Requester の Draft/Submit、Approver の Approve、Requester の Approved/Audit 確認、および複数 Organization の選択を、専用 PostgreSQL・Keycloak・Go API・Vite・Playwright の stack で検証した。実装対象は `compose.e2e.yaml`、`scripts/e2e-stack.mjs` とその test、`scripts/e2e-seed.mjs` とその test、`playwright.config.ts`、`e2e/approval-flow.spec.ts`、`package.json`。開発手順は `.env.example`、`frontend-local-development.md`、`toolchain.md` に記録した。
 
+E2E は既存 Go OIDC client の認可 URL に `openid` scope がなく、Keycloak から ID Token が返らない問題を検出した。`internal/auth/oidc.go` と `oidc_test.go` に最小修正と回帰テストを追加し、同じ browser flow で再検証した。
+
 対応要求は FR-003/004/005/007/011/012 と NFR-001/002/003/006。依拠した Accepted Decision は ADR-001/003/005/006/007/009/011/013/015、PDR-001/002。API の正本は `api/openapi.yaml`。新しい本番依存関係や重要な Product/Architecture Decision は追加していない。
 
 ## 実測した検証
@@ -30,6 +32,8 @@
 文書担当の sandbox 内 `pnpm run test:e2e` は `Playwright command failed`、exit 1 となった。runner は秘密を含む browser 出力を表示しないため、この出力だけから原因を特定していない。この実行の固定 port は解放された。
 
 Task 3 実装担当はブラウザ実行が許可された環境で `pnpm run test:e2e` を修正前に連続 2 回 PASS と報告した。さらに URL query の検証を追加した commit `040689f` の後、同コマンドを再実行し、exit 0 と `Playwright completed` を報告した。終了後、`approval-flow-e2e-*` の container/volume と一時 Playwright 出力 directory が残っていないことも確認した。この browser run は文書担当自身の実行結果ではなく、Task 3 担当から受け取った検証結果である。
+
+最終監査でも `pnpm install --frozen-lockfile`、`pnpm run check`、`pnpm test`（136 件）、`pnpm run test:e2e:runner`（15 件）、`pnpm run build`、Go の auth/config/httpapi/cmd/api test、`go vet ./...`、`pnpm run test:db` が成功した。macOS Chromium 起動に必要な権限を付けた `pnpm run test:e2e` も exit 0 / `Playwright completed` となり、終了後に `approval-flow-e2e-*` の container と volume が残っていないことを確認した。これらは文書担当とは別に、最終監査で実行した結果である。
 
 ## Browser が検証する境界
 
