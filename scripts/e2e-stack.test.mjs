@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
 import test from "node:test";
 import { runStack } from "./e2e-stack.mjs";
 
@@ -85,6 +86,15 @@ test("runner does not print secrets or pass them as command arguments", async ()
 		calls.some((call) => call.options.stdio === "inherit"),
 		false,
 	);
+});
+
+test("uses a writable per-run Go cache and removes it after cleanup", async () => {
+	const { deps, calls } = fakeDeps();
+	await runStack(deps);
+	const cache = calls.find(({ command }) => command === "go").options.env
+		.GOCACHE;
+	assert.match(cache, /approval-flow-e2e-go-cache-/);
+	assert.equal(existsSync(cache), false);
 });
 
 test("stops a detached service group after its wrapper exits, escalating if descendants survive", async () => {
