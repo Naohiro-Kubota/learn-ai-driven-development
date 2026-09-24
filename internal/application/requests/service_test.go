@@ -3,6 +3,7 @@ package requests
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -37,6 +38,29 @@ func TestCreateDraftRejectsInvalidTitle(t *testing.T) {
 			_, err := NewService(newFakeRepository()).CreateDraft(context.Background(), requester("requester"), "organization", testCase.title, "")
 			if !errors.Is(err, domain.ErrInvalidRequest) {
 				t.Fatalf("CreateDraft() error = %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
+func TestCreateDraftReportsInvalidContentFields(t *testing.T) {
+	for _, tc := range []struct {
+		name, title, description string
+		want                     []domain.FieldViolation
+	}{
+		{"blank title", " \t ", "", []domain.FieldViolation{{Field: "title", Code: "required"}}},
+		{"long title", strings.Repeat("x", 121), "", []domain.FieldViolation{{Field: "title", Code: "too_long"}}},
+		{"long description", "Title", strings.Repeat("x", 2001), []domain.FieldViolation{{Field: "description", Code: "too_long"}}},
+		{"both fields", " ", strings.Repeat("x", 2001), []domain.FieldViolation{{Field: "title", Code: "required"}, {Field: "description", Code: "too_long"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewService(newFakeRepository()).CreateDraft(context.Background(), requester("requester"), "organization", tc.title, tc.description)
+			if !errors.Is(err, domain.ErrInvalidRequest) {
+				t.Fatalf("error = %v, want ErrInvalidRequest", err)
+			}
+			var validation *domain.ValidationError
+			if !errors.As(err, &validation) || !reflect.DeepEqual(validation.Fields, tc.want) {
+				t.Fatalf("validation = %#v, want %#v", validation, tc.want)
 			}
 		})
 	}

@@ -29,7 +29,7 @@ func decodeJSONBody(w http.ResponseWriter, request *http.Request, dst any, requi
 	}
 	for _, field := range required {
 		if _, ok := object[field]; !ok {
-			return errors.New("required field missing")
+			return invalidField(field, "required")
 		}
 	}
 	encoded, err := json.Marshal(object)
@@ -38,7 +38,25 @@ func decodeJSONBody(w http.ResponseWriter, request *http.Request, dst any, requi
 	}
 	valueDecoder := json.NewDecoder(bytes.NewReader(encoded))
 	valueDecoder.DisallowUnknownFields()
-	return valueDecoder.Decode(dst)
+	if err := valueDecoder.Decode(dst); err != nil {
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) && typeErr.Field != "" {
+			return invalidField(typeErr.Field, "invalid")
+		}
+		return err
+	}
+	return nil
+}
+
+func invalidField(field, code string) error {
+	return &domain.ValidationError{Fields: []domain.FieldViolation{{Field: field, Code: code}}}
+}
+
+func invalidInputAPIError(err error) APIError {
+	if errors.Is(err, domain.ErrInvalidRequest) {
+		return requestAPIError(err)
+	}
+	return APIError{Status: http.StatusBadRequest, Code: "invalid_request"}
 }
 
 func decodeStrictObject(decoder *json.Decoder, object *map[string]json.RawMessage) error {
@@ -68,7 +86,7 @@ func decodeStrictObject(decoder *json.Decoder, object *map[string]json.RawMessag
 			return err
 		}
 		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-			return errors.New("null JSON property")
+			return invalidField(key, "invalid")
 		}
 		values[key] = raw
 	}
@@ -113,7 +131,7 @@ func (r *router) createRequest(w http.ResponseWriter, request *http.Request) {
 	}
 	var input createRequestInput
 	if err := decodeJSONBody(w, request, &input, "title"); err != nil {
-		WriteError(w, APIError{Status: http.StatusBadRequest, Code: "invalid_request"})
+		WriteError(w, invalidInputAPIError(err))
 		return
 	}
 	result, err := r.dependencies.RequestService.CreateDraft(request.Context(), actor, actor.OrganizationID, input.Title, input.Description)
@@ -152,8 +170,12 @@ func (r *router) updateRequest(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	var input updateDraftRequestInput
-	if err := decodeJSONBody(w, request, &input, "title", "description", "expectedVersion"); err != nil || input.ExpectedVersion < 1 {
-		WriteError(w, APIError{Status: http.StatusBadRequest, Code: "invalid_request"})
+	if err := decodeJSONBody(w, request, &input, "title", "description", "expectedVersion"); err != nil {
+		WriteError(w, invalidInputAPIError(err))
+		return
+	}
+	if input.ExpectedVersion < 1 {
+		WriteError(w, invalidInputAPIError(invalidField("expectedVersion", "invalid")))
 		return
 	}
 	result, err := r.dependencies.RequestService.UpdateDraft(request.Context(), actor, request.PathValue("requestId"), input.ExpectedVersion, input.Title, input.Description)
@@ -181,8 +203,12 @@ func (r *router) mutateRequest(w http.ResponseWriter, request *http.Request, ope
 		return
 	}
 	var input expectedVersionInput
-	if err := decodeJSONBody(w, request, &input, "expectedVersion"); err != nil || input.ExpectedVersion < 1 {
-		WriteError(w, APIError{Status: http.StatusBadRequest, Code: "invalid_request"})
+	if err := decodeJSONBody(w, request, &input, "expectedVersion"); err != nil {
+		WriteError(w, invalidInputAPIError(err))
+		return
+	}
+	if input.ExpectedVersion < 1 {
+		WriteError(w, invalidInputAPIError(invalidField("expectedVersion", "invalid")))
 		return
 	}
 	result, err := operation(request.Context(), actor, request.PathValue("requestId"), input.ExpectedVersion)

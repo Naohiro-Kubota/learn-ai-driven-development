@@ -43,9 +43,10 @@ GOCACHE=/private/tmp/learn-ai-go-cache pnpm run test:db
 `scripts/test-postgres.mjs` starts the test-only PostgreSQL 17.11 container on
 loopback `127.0.0.1:55432`, injects the isolated
 `TEST_DATABASE_URL` into the Go PostgreSQL tests, and runs the tests with
-`GOTOOLCHAIN=go1.27.1`. The tests apply the checked-in migrations from
+`GOTOOLCHAIN=go1.27.1`. The script generates a disposable database password
+for each run. The tests apply the checked-in migrations from
 `migrations/` in version order. The script always runs `docker compose -f
-compose.test.yaml down -v` afterward, including after a failure.
+compose.test.yaml down -v --remove-orphans` afterward, including after a failure.
 
 This test database is not the API's development database. Do not point
 `DATABASE_URL` at it while the script is running or reuse it after the script
@@ -204,8 +205,11 @@ interrupted before its `finally` cleanup ran, inspect the exact compose project
 first, then run:
 
 ```sh
-docker compose -f compose.test.yaml down -v
+TEST_DB_PASSWORD=cleanup-only docker compose -f compose.test.yaml down -v --remove-orphans
 ```
+
+`cleanup-only` is a nonsecret placeholder required to parse `compose.test.yaml`
+during `down`; it does not recover or reuse the generated test password.
 
 Unset the exported API variables or close the terminal. Keep local credentials
 and generated keys outside the repository, and verify that no secret-bearing

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,40 @@ import (
 	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/config"
 	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/domain"
 )
+
+func TestRequestMutationsReportIdentifiableInvalidFields(t *testing.T) {
+	for _, tc := range []struct {
+		name, method, path, body, field, code string
+	}{
+		{"missing title", http.MethodPost, "/api/v1/requests", `{}`, "title", "required"},
+		{"missing description", http.MethodPatch, "/api/v1/requests/r", `{"title":"T","expectedVersion":1}`, "description", "required"},
+		{"missing version", http.MethodPost, "/api/v1/requests/r/submit", `{}`, "expectedVersion", "required"},
+		{"invalid version", http.MethodPost, "/api/v1/requests/r/approvals", `{"expectedVersion":0}`, "expectedVersion", "invalid"},
+		{"null title", http.MethodPost, "/api/v1/requests", `{"title":null}`, "title", "invalid"},
+		{"wrong type title", http.MethodPost, "/api/v1/requests", `{"title":4}`, "title", "invalid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := requestTestDependencies()
+			d.RequestService = &requestServiceFake{}
+			r := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			r.AddCookie(auth.SessionCookie("cookie", true))
+			r.Header.Set("Origin", allowedOrigin)
+			r.Header.Set("X-CSRF-Token", "token")
+			rr := httptest.NewRecorder()
+			NewRouter(d).ServeHTTP(rr, r)
+			var response struct {
+				Code        string          `json:"code"`
+				FieldErrors []fieldErrorDTO `json:"fieldErrors"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if rr.Code != 400 || response.Code != "invalid_request" || len(response.FieldErrors) != 1 || response.FieldErrors[0].Field != tc.field || response.FieldErrors[0].Code != tc.code || response.FieldErrors[0].Message == "" {
+				t.Fatalf("status=%d response=%#v", rr.Code, response)
+			}
+		})
+	}
+}
 
 type requestServiceFake struct {
 	create   func(context.Context, requests.Actor, string, string, string) (domain.Request, error)
