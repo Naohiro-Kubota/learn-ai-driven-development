@@ -22,24 +22,27 @@ function watchErrors(page: Page): () => void {
 async function expectFrontendState(
 	page: Page,
 	pathname: string,
+	expectedRequestId: string | null = null,
 ): Promise<void> {
 	await expect.poll(() => new URL(page.url()).origin).toBe(frontendOrigin);
 	await expect.poll(() => new URL(page.url()).pathname).toBe(pathname);
-	const exposed = await page.evaluate(() => {
+	const exposed = await page.evaluate((requestId) => {
 		const url = new URL(window.location.href);
+		const query = [...url.searchParams.entries()];
 		return {
-			urlHasSecret: [...url.searchParams.keys()].some((key) =>
-				/^(code|state|access_token|id_token|refresh_token|csrf(token)?)$/i.test(
-					key,
-				),
-			),
+			queryMatches:
+				requestId === null
+					? query.length === 0
+					: query.length === 1 &&
+						query[0][0] === "requestId" &&
+						query[0][1] === requestId,
 			fragment: url.hash,
 			localStorageLength: window.localStorage.length,
 			sessionStorageLength: window.sessionStorage.length,
 		};
-	});
+	}, expectedRequestId);
 	expect(exposed).toEqual({
-		urlHasSecret: false,
+		queryMatches: true,
 		fragment: "",
 		localStorageLength: 0,
 		sessionStorageLength: 0,
@@ -146,12 +149,11 @@ test("requester and approver complete one request with separate sessions", async
 		const requestId = new URL(requesterPage.url()).searchParams.get(
 			"requestId",
 		);
-		expect(requestId).toBeTruthy();
+		if (!requestId) throw new Error("New draft did not expose a Request ID");
+		await expectFrontendState(requesterPage, "/", requestId);
 		await requesterPage.getByRole("button", { name: "Submit" }).click();
 		await expect(requesterPage.getByText("Status: pending")).toBeVisible();
-		expect(new URL(requesterPage.url()).searchParams.get("requestId")).toBe(
-			requestId,
-		);
+		await expectFrontendState(requesterPage, "/", requestId);
 		const requesterMemberId = await memberId(requesterPage);
 		expect(requesterMemberId).toBe("member-requester-a");
 
@@ -167,11 +169,10 @@ test("requester and approver complete one request with separate sessions", async
 			.getByRole("button", { name: "E2E approval request" })
 			.click();
 		await expect(approverPage.getByText("Status: pending")).toBeVisible();
-		expect(new URL(approverPage.url()).searchParams.get("requestId")).toBe(
-			requestId,
-		);
+		await expectFrontendState(approverPage, "/", requestId);
 		await approverPage.getByRole("button", { name: "Approve" }).click();
 		await expect(approverPage.getByText("Status: approved")).toBeVisible();
+		await expectFrontendState(approverPage, "/", requestId);
 		const approverMemberId = await memberId(approverPage);
 		expect(approverMemberId).toBe("member-approver-a");
 		expect(approverMemberId).not.toBe(requesterMemberId);
@@ -185,11 +186,8 @@ test("requester and approver complete one request with separate sessions", async
 				.getByRole("region", { name: "Audit history" })
 				.getByText(/request_approved by member-approver-a/),
 		).toBeVisible();
-		expect(new URL(requesterPage.url()).searchParams.get("requestId")).toBe(
-			requestId,
-		);
-		await expectFrontendState(requesterPage, "/");
-		await expectFrontendState(approverPage, "/");
+		await expectFrontendState(requesterPage, "/", requestId);
+		await expectFrontendState(approverPage, "/", requestId);
 		checkRequesterErrors();
 		checkApproverErrors();
 	} finally {
@@ -234,4 +232,14 @@ test("multi membership selects only a presented organization", async ({
 	} finally {
 		await context.close();
 	}
+});
+
+test("frontend URL check rejects an unrelated query value", async ({
+	page,
+}) => {
+	await page.goto("/");
+	await page.evaluate(() =>
+		window.history.replaceState(null, "", "/?unexpected=opaque"),
+	);
+	await expect(expectFrontendState(page, "/")).rejects.toThrow();
 });
