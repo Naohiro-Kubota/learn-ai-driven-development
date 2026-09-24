@@ -19,6 +19,8 @@ export type WorkspaceProps = {
 	requestId: string | null;
 	onRequestIdChange: (id: string | null) => void;
 	onSessionChange: (session: Session) => void;
+	onRefreshSession?: () => Promise<Session>;
+	mutationBlocked?: () => boolean;
 	onAuthenticationRequired: () => void;
 	onNotice: (notice: Notice | null) => void;
 };
@@ -35,13 +37,13 @@ function validate(title: string, description: string): FieldError[] {
 			code: "required",
 			message: "Title is required.",
 		});
-	else if (title.trim().length > 120)
+	else if (Array.from(title.trim()).length > 120)
 		errors.push({
 			field: "title",
 			code: "too_long",
 			message: "Title must be at most 120 characters.",
 		});
-	if (description.length > 2000)
+	if (Array.from(description).length > 2000)
 		errors.push({
 			field: "description",
 			code: "too_long",
@@ -56,6 +58,8 @@ export function RequestWorkspace({
 	requestId,
 	onRequestIdChange,
 	onSessionChange,
+	onRefreshSession,
+	mutationBlocked,
 	onAuthenticationRequired,
 	onNotice,
 }: WorkspaceProps): ReactElement {
@@ -72,6 +76,7 @@ export function RequestWorkspace({
 	const [pendingLoading, setPendingLoading] = useState(false);
 	const [pendingFailed, setPendingFailed] = useState(false);
 	const [sessionReadFailed, setSessionReadFailed] = useState(false);
+	const [createdDraftId, setCreatedDraftId] = useState<string | null>(null);
 	const mutationInFlight = useRef(false);
 	const generation = useRef(0);
 	const auditRefreshSequence = useRef(0);
@@ -88,24 +93,36 @@ export function RequestWorkspace({
 			auditRefreshSequence.current++;
 			setAuditReadFailed(false);
 			setRead({ kind: "loading" });
-			Promise.all([client.getRequest(id), client.listAuditEvents(id)]).then(
-				([request, events]) => {
-					if (generation.current !== current) return;
-					setRead({ kind: "ready", request, events });
-					setEditTitle(request.title);
-					setEditDescription(request.description);
-				},
-				(error: unknown) => {
-					if (generation.current !== current) return;
-					if (
-						error instanceof ApiError &&
-						error.body.code === "authentication_required"
-					) {
-						setRead({ kind: "empty" });
-						onAuthenticationRequired();
-					} else setRead({ kind: "error" });
-				},
-			);
+			Promise.allSettled([
+				client.getRequest(id),
+				client.listAuditEvents(id),
+			]).then(([requestResult, eventsResult]) => {
+				if (generation.current !== current) return;
+				if (
+					(requestResult.status === "rejected" &&
+						requestResult.reason instanceof ApiError &&
+						requestResult.reason.body.code === "authentication_required") ||
+					(eventsResult.status === "rejected" &&
+						eventsResult.reason instanceof ApiError &&
+						eventsResult.reason.body.code === "authentication_required")
+				) {
+					setRead({ kind: "empty" });
+					onAuthenticationRequired();
+					return;
+				}
+				if (
+					requestResult.status === "rejected" ||
+					eventsResult.status === "rejected"
+				) {
+					setRead({ kind: "error" });
+					return;
+				}
+				const request = requestResult.value;
+				const events = eventsResult.value;
+				setRead({ kind: "ready", request, events });
+				setEditTitle(request.title);
+				setEditDescription(request.description);
+			});
 		},
 		[client, onAuthenticationRequired],
 	);
@@ -161,8 +178,10 @@ export function RequestWorkspace({
 	async function refreshSession(): Promise<void> {
 		setSessionReadFailed(false);
 		try {
-			const refreshed = await client.getSession();
-			onSessionChange(refreshed);
+			const refreshed = await (onRefreshSession
+				? onRefreshSession()
+				: client.getSession());
+			if (!onRefreshSession) onSessionChange(refreshed);
 			onNotice({
 				code: "csrf_validation_failed",
 				text: "Session token refreshed. Review and click again if you still want to continue.",
@@ -216,19 +235,20 @@ export function RequestWorkspace({
 		});
 	}
 
-	function handleError(
+	async function handleError(
 		error: unknown,
 		setErrors: (errors: FieldError[]) => void,
-	): void {
+	): Promise<void> {
 		if (error instanceof ApiError && error.body.fieldErrors?.length)
 			setErrors(error.body.fieldErrors);
-		else void recover(error, validId ?? undefined);
+		else await recover(error, validId ?? undefined);
 	}
 
 	function create(): void {
 		const errors = validate(createTitle, createDescription);
 		setCreateErrors(errors);
-		if (errors.length || mutationInFlight.current) return;
+		if (errors.length || mutationInFlight.current || mutationBlocked?.())
+			return;
 		mutationInFlight.current = true;
 		setPending(true);
 		const currentGeneration = generation.current;
@@ -239,23 +259,25 @@ export function RequestWorkspace({
 			)
 			.then(
 				(request) => {
-					if (generation.current !== currentGeneration) return;
 					setCreateTitle("");
 					setCreateDescription("");
 					setCreateErrors([]);
-					onRequestIdChange(request.id);
-					setRead({ kind: "ready", request, events: [] });
+					if (generation.current === currentGeneration) {
+						setCreatedDraftId(null);
+						onRequestIdChange(request.id);
+						setRead({ kind: "ready", request, events: [] });
+					} else setCreatedDraftId(request.id);
 				},
-				(error: unknown) => {
+				async (error: unknown) => {
 					if (
 						error instanceof ApiError &&
 						error.body.code === "authentication_required"
 					) {
-						void recover(error);
+						await recover(error);
 						return;
 					}
 					if (generation.current === currentGeneration)
-						handleError(error, setCreateErrors);
+						await handleError(error, setCreateErrors);
 				},
 			)
 			.finally(() => {
@@ -268,7 +290,8 @@ export function RequestWorkspace({
 		if (read.kind !== "ready" || !validId) return;
 		const errors = validate(editTitle, editDescription);
 		setEditErrors(errors);
-		if (errors.length || mutationInFlight.current) return;
+		if (errors.length || mutationInFlight.current || mutationBlocked?.())
+			return;
 		mutationInFlight.current = true;
 		setPending(true);
 		const currentGeneration = generation.current;
@@ -326,16 +349,16 @@ export function RequestWorkspace({
 						},
 					);
 				},
-				(error: unknown) => {
+				async (error: unknown) => {
 					if (
 						error instanceof ApiError &&
 						error.body.code === "authentication_required"
 					) {
-						void recover(error);
+						await recover(error);
 						return;
 					}
 					if (generation.current === currentGeneration)
-						handleError(error, setEditErrors);
+						await handleError(error, setEditErrors);
 				},
 			)
 			.finally(() => {
@@ -345,7 +368,13 @@ export function RequestWorkspace({
 	}
 
 	function transition(kind: "submit" | "approve"): void {
-		if (read.kind !== "ready" || !validId || mutationInFlight.current) return;
+		if (
+			read.kind !== "ready" ||
+			!validId ||
+			mutationInFlight.current ||
+			mutationBlocked?.()
+		)
+			return;
 		mutationInFlight.current = true;
 		setPending(true);
 		const currentGeneration = generation.current;
@@ -397,16 +426,16 @@ export function RequestWorkspace({
 					);
 					if (session.actor.roles.includes("approver")) loadPending();
 				},
-				(error: unknown) => {
+				async (error: unknown) => {
 					if (
 						error instanceof ApiError &&
 						error.body.code === "authentication_required"
 					) {
-						void recover(error);
+						await recover(error);
 						return;
 					}
 					if (generation.current === currentGeneration)
-						void recover(error, validId);
+						await recover(error, validId);
 				},
 			)
 			.finally(() => {
@@ -417,6 +446,20 @@ export function RequestWorkspace({
 
 	return (
 		<section aria-label="Workspace">
+			{createdDraftId && (
+				<p>
+					Draft created.{" "}
+					<button
+						type="button"
+						onClick={() => {
+							onRequestIdChange(createdDraftId);
+							setCreatedDraftId(null);
+						}}
+					>
+						Open created Draft
+					</button>
+				</p>
+			)}
 			{sessionReadFailed && (
 				<button type="button" onClick={() => void refreshSession()}>
 					Retry session read

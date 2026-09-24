@@ -77,6 +77,120 @@ function mount(
 }
 
 describe("RequestWorkspace", () => {
+	it.each([
+		["title", "😀".repeat(61), ""],
+		["description", "Valid", "😀".repeat(1001)],
+	] as const)(
+		"accepts %s by Unicode codepoint count",
+		async (_field, title, description) => {
+			const api = client();
+			mount(api);
+			fireEvent.change(screen.getByLabelText("Title"), {
+				target: { value: ` ${title} ` },
+			});
+			fireEvent.change(screen.getByLabelText("Description"), {
+				target: { value: description },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Create Draft" }));
+			await waitFor(() =>
+				expect(api.createRequest).toHaveBeenCalledWith(
+					{ title, description },
+					"csrf",
+				),
+			);
+		},
+	);
+
+	it.each(["request", "audit"] as const)(
+		"prioritizes Audit/Request 401 after the other %s read fails",
+		async (firstFailure) => {
+			const unauthenticated = new ApiError(401, {
+				code: "authentication_required",
+				message: "expired",
+			});
+			let failRequest!: (reason: unknown) => void;
+			let failAudit!: (reason: unknown) => void;
+			const requestRead = new Promise<Request>((_resolve, reject) => {
+				failRequest = reject;
+			});
+			const auditRead = new Promise<AuditEvent[]>((_resolve, reject) => {
+				failAudit = reject;
+			});
+			const onAuthenticationRequired = vi.fn();
+			const api = client({
+				getRequest: vi.fn().mockReturnValue(requestRead),
+				listAuditEvents: vi.fn().mockReturnValue(auditRead),
+			});
+			render(
+				<RequestWorkspace
+					client={api}
+					session={session}
+					requestId={draft.id}
+					onRequestIdChange={vi.fn()}
+					onSessionChange={vi.fn()}
+					onAuthenticationRequired={onAuthenticationRequired}
+					onNotice={vi.fn()}
+				/>,
+			);
+			await act(async () => {
+				if (firstFailure === "request") failRequest(new Error("offline"));
+				else failAudit(new Error("offline"));
+			});
+			await act(async () => {
+				if (firstFailure === "request") failAudit(unauthenticated);
+				else failRequest(unauthenticated);
+			});
+			await waitFor(() =>
+				expect(onAuthenticationRequired).toHaveBeenCalledOnce(),
+			);
+			expect(screen.queryByText("Could not load request.")).toBeNull();
+		},
+	);
+
+	it("keeps access to a created Draft when selection changes during Create", async () => {
+		let finish!: (request: Request) => void;
+		const createRequest = vi.fn().mockReturnValue(
+			new Promise<Request>((resolve) => {
+				finish = resolve;
+			}),
+		);
+		const api = client({
+			createRequest,
+			getRequest: vi
+				.fn()
+				.mockImplementation((id: string) =>
+					Promise.resolve({ ...draft, id, title: id }),
+				),
+		});
+		const onRequestIdChange = vi.fn();
+		const props = {
+			client: api,
+			session,
+			onRequestIdChange,
+			onSessionChange: vi.fn(),
+			onAuthenticationRequired: vi.fn(),
+			onNotice: vi.fn(),
+		};
+		const { rerender } = render(
+			<RequestWorkspace {...props} requestId="first" />,
+		);
+		await screen.findByRole("heading", { name: "first" });
+		fireEvent.change(
+			within(
+				screen.getByRole("region", { name: "Create request" }),
+			).getByLabelText("Title"),
+			{ target: { value: "New draft" } },
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Create Draft" }));
+		rerender(<RequestWorkspace {...props} requestId="second" />);
+		await screen.findByRole("heading", { name: "second" });
+		await act(async () =>
+			finish({ ...draft, id: "created", title: "New draft" }),
+		);
+		expect(onRequestIdChange).not.toHaveBeenCalled();
+		fireEvent.click(screen.getByRole("button", { name: /Open created Draft/ }));
+		expect(onRequestIdChange).toHaveBeenCalledWith("created");
+	});
 	it.each(["create", "update"] as const)(
 		"propagates stale %s authentication_required after selection changes",
 		async (kind) => {
