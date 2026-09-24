@@ -1,6 +1,8 @@
 # React Frontend実装計画
 
-> **エージェント実行者向け:** `superpowers:subagent-driven-development`（推奨）または`superpowers:executing-plans`を使い、タスク単位で実行すること。進捗は`- [ ]`で管理する。
+**Status: Completed (2026-09-24)。** Task 1〜4の実装・レビュー・検証を完了した。各Stepのチェックはタスクの完了を表し、当初の例示コマンドやcommit単位をそのまま実行したことを意味しない。実際の差分、RED/GREEN、検証結果と環境制約は各Taskの詳細計画・完了記録を正本とする。
+
+> **実行時の指示（履歴）:** `superpowers:subagent-driven-development`（推奨）または`superpowers:executing-plans`を使い、タスク単位で進捗を管理する。
 
 **目的:** 同一site上の別originで配信されるReact UIから、OIDCログイン、Organization選択、Draft作成・Submit、Pending承認、Approved/Audit確認を安全に完了できるようにする。
 
@@ -40,7 +42,7 @@
 
 ### Task 1: Cross-origin API transportと固定Frontend redirectを追加する
 
-**完了（2026-09-23）:** [PR #21](https://github.com/Naohiro-Kubota/learn-ai-driven-development/pull/21)を`develop`へマージ済み。以下は実装前に書かれた当初計画で、主要な設定・CORS・redirectはTask 1着手時点ですでに存在していた。実際のred/green、差分、検証、レビューは[Task 1補完計画](2026-09-23-react-frontend-task1-completion.md)と[完了記録](../../development/react-frontend-task1-completion-2026-09-23.md)を正本とする。当初計画の未チェック項目はこの履歴を保つため変更しない。
+**完了（2026-09-23）:** [PR #21](https://github.com/Naohiro-Kubota/learn-ai-driven-development/pull/21)を`develop`へマージ済み。主要な設定・CORS・redirectはTask 1着手時点ですでに存在していた。実際のred/green、差分、検証、レビューは[Task 1補完計画](2026-09-23-react-frontend-task1-completion.md)と[完了記録](../../development/react-frontend-task1-completion-2026-09-23.md)を正本とする。
 
 **ファイル:**
 - 作成: `internal/httpapi/cors.go`、`internal/httpapi/cors_test.go`
@@ -48,7 +50,7 @@
 
 **Interface:** `config.Config.FrontendOrigin string`、`NewCORS(allowedOrigin string, next http.Handler) http.Handler`、`frontendLocation(frontendOrigin, path string) string`を提供する。`NewRouter`はCORS wrapperを返し、許可された`OPTIONS`はroute dispatch前に`204`を返す。
 
-- [ ] **Step 1: 失敗するconfiguration、CORS、redirect contract testを書く**
+- [x] **Step 1: 失敗するconfiguration、CORS、redirect contract testを書く**
 
 ```go
 func TestLoadRejectsFrontendOriginWithPath(t *testing.T) {
@@ -71,7 +73,7 @@ func TestCORSPreflightAllowsOnlyConfiguredOrigin(t *testing.T) {
 
 非許可origin/method/header、malformedまたは複数`Origin` headerにはCORS headerを返さないこと、許可originの`401`/`403`にはCORS headerを返すこと、callback/selection成功時は攻撃者queryがあっても固定Frontend pathへredirectすることをtestする。
 
-- [ ] **Step 2: focused testを実行して失敗を確認する**
+- [x] **Step 2: focused testを実行して失敗を確認する**
 
 Run:
 
@@ -79,15 +81,15 @@ Run:
 GOTOOLCHAIN=go1.27.1 go test ./internal/config ./internal/httpapi ./cmd/api -run 'Test(Load.*Frontend|CORS|Callback|OrganizationSelection)' -count=1
 ```
 
-期待結果: `APP_FRONTEND_ORIGIN`、CORS middleware、absolute redirectが未実装のためFAIL。
+当初の期待結果は未実装によるFAILだった。実際のRED確認は、既存の設定・CORS・redirectを踏まえ、重複preflight headerを拒否するテストで行った。詳細はTask 1補完計画と完了記録を参照。
 
-- [ ] **Step 3: 最小の厳格なtransport boundaryを実装する**
+- [x] **Step 3: 最小の厳格なtransport boundaryを実装する**
 
-`APP_ALLOWED_ORIGIN`を`APP_FRONTEND_ORIGIN`へ置換し、`net/url`でHTTP(S)、host、空または`/`だけのpathを検証する。query、fragment、userinfo、whitespaceを拒否し、loopback development制約はFrontend originとAPI listen addressで検査する。
+`APP_ALLOWED_ORIGIN`を`APP_FRONTEND_ORIGIN`へ置換し、`net/url`でHTTP(S)、host、空のpathを検証する。path、query、fragment、userinfo、whitespaceを拒否し、loopback development制約はFrontend originとAPI listen addressで検査する。
 
 CORSは標準libraryだけのwrapperにする。既存`Vary`を残して`Origin`を加え、許可originだけにexact allow-origin/credentialsを返す。列挙済みmethod/headerだけのpreflightを処理し、OPTIONSでは認証、CSRF発行、body parse、wrapped handler呼出しをしない。mux外側に置き、許可originからerror responseも読めるようにする。redirectはvalidated `FrontendOrigin`とconstant pathだけから構築し、OpenAPIの`302 Location`説明も更新する。
 
-- [ ] **Step 4: focused testとAPI regression checkを実行する**
+- [x] **Step 4: focused testとAPI regression checkを実行する**
 
 ```bash
 GOTOOLCHAIN=go1.27.1 go test ./internal/config ./internal/httpapi ./cmd/api -count=1
@@ -96,7 +98,7 @@ GOTOOLCHAIN=go1.27.1 go test ./... -count=1
 
 期待結果: PASS。
 
-- [ ] **Step 5: このタスクをcommitする**
+- [x] **Step 5: このタスクをcommitする**
 
 ```bash
 git add api/openapi.yaml internal/config internal/httpapi/cors.go internal/httpapi/cors_test.go internal/httpapi/router.go internal/httpapi/auth_handlers.go internal/httpapi/auth_handlers_test.go cmd/api/main_test.go docs/development/toolchain.md
@@ -104,6 +106,8 @@ git commit -m "feat: allow the configured frontend origin"
 ```
 
 ### Task 2: 型付きReact transport layerとapplication shellを作る
+
+**完了（2026-09-23）:** 実際のタスク分割、RED/GREEN、commit、検証、レビューは[Task 2詳細計画](2026-09-23-react-frontend-task-2.md)と[完了記録](../../development/react-frontend-task2-completion-2026-09-23.md)を正本とする。
 
 **ファイル:**
 - 作成: `index.html`、`vite.config.ts`、`src/main.tsx`、`src/config.ts`、`src/config.test.ts`、`src/api/types.ts`、`src/api/client.ts`、`src/api/client.test.ts`、`src/app.tsx`、`src/app.test.tsx`、`src/test/setup.ts`
@@ -126,7 +130,7 @@ export function createApiClient(apiOrigin: URL, fetchFn?: typeof fetch): {
 };
 ```
 
-- [ ] **Step 1: 失敗するconfiguration/client/shell testを書く**
+- [x] **Step 1: 失敗するconfiguration/client/shell testを書く**
 
 ```ts
 it("sends credentials and CSRF only for an unsafe request", async () => {
@@ -142,19 +146,19 @@ it("sends credentials and CSRF only for an unsafe request", async () => {
 
 不正/未設定`VITE_API_ORIGIN`、non-JSON network response、`fieldErrors`、`204` logout、CSRFなしのGET、最新tokenだけを持つPOST/PATCH、return URLなしのlogin navigation、`authentication_required`時のSign in表示をtestする。
 
-- [ ] **Step 2: focused testを実行して失敗を確認する**
+- [x] **Step 2: focused testを実行して失敗を確認する**
 
 Run: `pnpm test -- src/config.test.ts src/api/client.test.ts src/app.test.tsx`
 
 期待結果: Vite entry、transport type/client、React shellが未実装のためFAIL。
 
-- [ ] **Step 3: shellとAPI boundaryを実装する**
+- [x] **Step 3: shellとAPI boundaryを実装する**
 
 router/state/UI library/generated clientなしにVite React entryとtest environmentを追加する。`config.ts`はabsolute HTTP(S)でcredentials/query/fragmentなしの`VITE_API_ORIGIN`だけを受け入れ、trailing slashを正規化する。`types.ts`はOpenAPI public fieldだけをmirrorする。
 
 `client.ts`はvalidated API originからURLを作り、全requestへ`credentials: "include"`を指定する。unsafe JSON requestだけに`Content-Type`と`X-CSRF-Token`を付与し、`ErrorResponse.code`だけを分岐に用いる。`App`は最初に`getSession`を呼び、`authentication_required`をSign in state、成功をauthenticated state、その他をretry可能なgeneric errorとする。raw CSRFはReact stateだけに置く。
 
-- [ ] **Step 4: focused testとstatic checkを実行する**
+- [x] **Step 4: focused testとstatic checkを実行する**
 
 ```bash
 pnpm test -- src/config.test.ts src/api/client.test.ts src/app.test.tsx
@@ -165,7 +169,7 @@ pnpm run lint
 
 期待結果: PASS。package/lockfile変更なし。
 
-- [ ] **Step 5: このタスクをcommitする**
+- [x] **Step 5: このタスクをcommitする**
 
 ```bash
 git add index.html vite.config.ts tsconfig.json src/main.tsx src/config.ts src/config.test.ts src/api src/app.tsx src/app.test.tsx src/test/setup.ts
@@ -174,15 +178,15 @@ git commit -m "feat: add typed React API client"
 
 ### Task 3: Vertical Slice画面とrecovery behaviorを実装する
 
-**完了（2026-09-24）:** 実装とタスク別・全体レビューを完了した。実際の差分、RED/GREEN、検証結果、残るTask 4 browser E2Eは[Task 3詳細計画](2026-09-23-react-frontend-task-3.md)と[完了記録](../../development/react-frontend-task3-completion-2026-09-24.md)を正本とする。以下の当初計画の未チェック項目は履歴として残す。
+**完了（2026-09-24）:** 実装とタスク別・全体レビューを完了した。実際の差分、RED/GREEN、検証結果は[Task 3詳細計画](2026-09-23-react-frontend-task-3.md)と[完了記録](../../development/react-frontend-task3-completion-2026-09-24.md)を正本とする。後続のTask 4 browser E2Eも完了した。
 
 **ファイル:**
 - 作成: `src/components/sign-in.tsx`、`organization-selection.tsx`、`request-workspace.tsx`、`request-form.tsx`、`request-detail.tsx`、`pending-list.tsx`、`audit-history.tsx`、`error-notice.tsx`、`request-workspace.test.tsx`、`organization-selection.test.tsx`、`src/styles.css`
 - 変更: `src/app.tsx`
 
-**Interface:** `App`は`{ session, requestId, notice }`を管理し、`requestId`は`?requestId=<opaque id>`だけから得る。`RequestWorkspace`はCreate/Update/Submit/Approve後またはconflict後にRequestとAuditを再取得する。`OrganizationSelection`はcandidateと一時CSRF tokenだけを使い、成功後はserver redirectに従う。
+**Interface:** `App`は`{ session, requestId, notice }`を管理し、`requestId`は`?requestId=<opaque id>`だけから得る。`RequestWorkspace`はCreate後に選択したRequestとAuditを読み、Update/Submit/Approve成功後は返却されたRequestを表示してAuditを再取得する。`version_conflict`または`invalid_state`の後はRequestとAuditを再取得し、mutationを自動再送しない。`OrganizationSelection`はcandidateと一時CSRF tokenだけを使い、成功後は固定Frontend path `/`へ移動する。
 
-- [ ] **Step 1: 全user-visible stateの失敗するcomponent testを書く**
+- [x] **Step 1: 全user-visible stateの失敗するcomponent testを書く**
 
 ```tsx
 it("refetches instead of retrying a stale Submit", async () => {
@@ -196,19 +200,19 @@ it("refetches instead of retrying a stale Submit", async () => {
 
 空白Titleの`fieldErrors`、Draftだけの編集/Submit、Pending/Approvedのread-only、assigned ApproverだけのApprove、SubmitでApproverを選ばないこと、Approver roleだけのPending一覧、空Descriptionを含むAudit、CSRF failure後の明示的retry、401/logout後のSign inをtestする。
 
-- [ ] **Step 2: focused testを実行して失敗を確認する**
+- [x] **Step 2: focused testを実行して失敗を確認する**
 
 Run: `pnpm test -- src/components/request-workspace.test.tsx src/components/organization-selection.test.tsx`
 
 期待結果: screen componentとmutation recoveryが未実装のためFAIL。
 
-- [ ] **Step 3: 最小UI behaviorを実装する**
+- [x] **Step 3: 最小UI behaviorを実装する**
 
 `/organization-selection`ではcandidateを一度取得し、organization nameをbuttonとして表示して、そのCSRF tokenを一度だけselectionに使う。`/`ではsessionをbootstrapし、未認証ならSign in、認証済みならdraft formとApprover role向けPending listを表示する。
 
 create成功時はURLを`?requestId=<encodeURIComponent(request.id)>`へ更新してdetail/auditを読む。Draft Update、Submit、Approve成功時はresponseを表示しAuditを更新する。mutationにはcurrent `request.version`を渡す。`version_conflict`/`invalid_state`は一度だけre-fetch、`csrf_validation_failed`はsession refresh後に明示的retry、`authentication_required`はsession/tokenをclearしてSign inへ戻す。server contentはtextとして表示する。
 
-- [ ] **Step 4: UI suiteとbuildを実行する**
+- [x] **Step 4: UI suiteとbuildを実行する**
 
 ```bash
 pnpm test -- src/app.test.tsx src/components/request-workspace.test.tsx src/components/organization-selection.test.tsx
@@ -217,7 +221,7 @@ pnpm run build
 
 期待結果: PASS。`dist/`はcommitしない。
 
-- [ ] **Step 5: このタスクをcommitする**
+- [x] **Step 5: このタスクをcommitする**
 
 ```bash
 git add src/app.tsx src/styles.css src/components
@@ -226,15 +230,15 @@ git commit -m "feat: add request approval workflow screens"
 
 ### Task 4: 再現可能なbrowser E2Eとdeveloper evidenceを追加する
 
-**完了（2026-09-24）:** 実装、レビュー、実ブラウザ E2E と開発者向け文書を完了した。実際の差分、RED/GREEN、検証結果、環境制約は [Task 4 詳細計画](2026-09-24-react-frontend-task-4.md) と [完了記録](../../development/frontend-completion-2026-09-24.md) を正本とする。以下の当初計画の未チェック項目と 2026-09-23 の予定ファイル名は履歴として残す。正規の認証通信には cookie や CSRF header が載るため、「network fixture に raw cookie 等がない」という当初表現は、保存 artifact・URL・storage・console への漏出を防ぐ検証として具体化した。
+**完了（2026-09-24）:** 実装、レビュー、実ブラウザ E2E と開発者向け文書を完了した。実際の差分、RED/GREEN、検証結果、環境制約は[Task 4 詳細計画](2026-09-24-react-frontend-task-4.md)と[完了記録](../../development/frontend-completion-2026-09-24.md)を正本とする。
 
 **ファイル:**
-- 作成: `playwright.config.ts`、`e2e/approval-flow.spec.ts`、`compose.e2e.yaml`、`scripts/e2e-stack.mjs`、`.env.example`、`docs/development/frontend-local-development.md`、`docs/development/frontend-completion-2026-09-23.md`
+- 作成: `playwright.config.ts`、`e2e/approval-flow.spec.ts`、`compose.e2e.yaml`、`scripts/e2e-stack.mjs`、`scripts/e2e-seed.mjs`、`.env.example`、`docs/development/frontend-local-development.md`、`docs/development/frontend-completion-2026-09-24.md`
 - 変更: `package.json`、`docs/development/toolchain.md`
 
 **Interface:** `pnpm run test:e2e`はisolated PostgreSQL、Keycloak 26.7.4、Go API、Viteを起動し、Requester/Approver mappingとdefault Approverをprovisionして、finallyで破棄する。Playwrightは別browser contextを使い、test headerやserver-side authentication bypassを使わない。
 
-- [ ] **Step 1: 失敗する二者E2E specを書く**
+- [x] **Step 1: 失敗する二者E2E specを書く**
 
 ```ts
 test("requester submits, assigned approver approves, requester reads audit", async ({ browser }) => {
@@ -246,21 +250,21 @@ test("requester submits, assigned approver approves, requester reads audit", asy
 });
 ```
 
-複数membership loginが`/organization-selection`へ到達し、候補Memberだけを選べることを追加する。redirect後のbrowser addressがFrontend originであること、console/network fixtureにraw cookie、OIDC token、CSRFがないことをassertする。
+複数membership loginが`/organization-selection`へ到達し、候補Memberだけを選べることを追加する。redirect後のbrowser addressがFrontend originであること、URLとbrowser storageに秘密値を置かないこと、予期しないconsole/page errorがないことをassertする。正規の認証通信にはcookieやCSRF headerが載るため、raw network dumpやtrace/HAR/videoは保存しない。
 
-- [ ] **Step 2: E2E commandを実行して失敗を確認する**
+- [x] **Step 2: E2E commandを実行して失敗を確認する**
 
 Run: `pnpm run test:e2e`
 
 期待結果: isolated stack、provisioned identity、Playwright specが未実装のためFAIL。
 
-- [ ] **Step 3: isolated stack、E2E、運用文書を実装する**
+- [x] **Step 3: isolated stack、E2E、運用文書を実装する**
 
-`compose.e2e.yaml`はpinned Keycloak image/digestとPostgreSQLを使い、Frontend/APIをloopback same-siteだがdistinct originとして設定する。`e2e-stack.mjs`はrepository外のtemporary runtime configを作り、`APP_FRONTEND_ORIGIN`、OIDC redirect URI、database URLを明示して起動する。bounded health check、failure時artifact保存、`finally`でのresource cleanupを実装し、production test-auth routeやActor header信頼を追加しない。
+`compose.e2e.yaml`はpinned Keycloak image/digestとPostgreSQLを使い、Frontend/APIをloopback same-siteだがdistinct originとして設定する。`e2e-stack.mjs`は実行ごとの環境変数とrepository外の一時Go cache・Playwright出力ディレクトリを用意し、`APP_FRONTEND_ORIGIN`、OIDC redirect URI、database URLを明示して起動する。bounded health check、秘密を含み得るraw artifactを保存しない処理、`finally`でのresource cleanupを実装し、production test-auth routeやActor header信頼を追加しない。
 
 local環境変数、`pnpm run dev`、Go API command、OIDC callback URL、`VITE_API_ORIGIN`と`APP_FRONTEND_ORIGIN`の違い、same-site制限を文書化する。全check成功後だけcompletion evidenceに変更file、FR-003/004/005/007/011/012、ADR-001/003/005/006/007/011/013/015、PDR-001/002、未決のdeployment hostを記録する。
 
-- [ ] **Step 4: 全verificationを実行する**
+- [x] **Step 4: 全verificationを実行する**
 
 ```bash
 pnpm install --frozen-lockfile
@@ -275,12 +279,12 @@ GOTOOLCHAIN=go1.27.1 go vet ./...
 git diff --check
 ```
 
-期待結果: PASS。E2Eはdisposable stateを使う。
+当初の期待結果は全コマンドPASS。実際のGo DB統合テストは一時DBを注入する`pnpm run test:db`で検証し、実ブラウザE2EはChromium起動権限のある環境で成功した。sandbox内での失敗も含む実測結果はTask 4完了記録を参照。E2Eはdisposable stateを使う。
 
-- [ ] **Step 5: このタスクをcommitする**
+- [x] **Step 5: このタスクをcommitする**
 
 ```bash
-git add playwright.config.ts e2e compose.e2e.yaml scripts/e2e-stack.mjs .env.example package.json docs/development/toolchain.md docs/development/frontend-local-development.md docs/development/frontend-completion-2026-09-23.md
+git add playwright.config.ts e2e compose.e2e.yaml scripts/e2e-stack.mjs scripts/e2e-seed.mjs .env.example package.json docs/development/toolchain.md docs/development/frontend-local-development.md docs/development/frontend-completion-2026-09-24.md
 git commit -m "test: verify the cross-origin approval flow"
 ```
 

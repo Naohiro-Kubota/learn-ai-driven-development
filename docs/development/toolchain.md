@@ -60,3 +60,5 @@ pnpm run build
 画面は session bootstrap、Sign in、Organization 選択、Draft 作成・編集、Submit、割当済み Pending 一覧、Approve、Request と Audit の確認、logout と明示的なエラー回復を提供する。手動起動の API・Keycloak・DB の準備は [`frontend-local-development.md`](frontend-local-development.md) と [`local-api.md`](local-api.md) を参照する。
 
 Browser E2E の entrypoint は `pnpm run test:e2e`。これは `compose.e2e.yaml` の専用 PostgreSQL/Keycloak と Go API、Vite、Playwright を起動し、その実行が作成した資源だけを終了時に削除する。`pnpm run test:e2e:runner` は runner の unit test。固定 loopback port `8080`、`8081`、`5173`、`55432` を使用するので、`pnpm run test:db` や手動開発 stack と同時に実行しない。Playwright Chromium を初回に `pnpm exec playwright install chromium` で導入する。
+
+ローカル macOS で Codex が Browser E2E を実行するときは、最初から `exec_command` の `sandbox_permissions: "require_escalated"` と `prefix_rule: ["pnpm", "run", "test:e2e"]` を指定する。承認・自動審査は引き続き適用される。sandbox 内の既知の Chromium 権限エラーを E2E の失敗として記録せず、権限付き実行の実結果、または承認が得られなかった事実を記録する。開発者が端末で実行するコマンドは変わらない。詳細は [`frontend-local-development.md`](frontend-local-development.md) を参照する。
