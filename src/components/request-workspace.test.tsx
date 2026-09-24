@@ -77,6 +77,72 @@ function mount(
 }
 
 describe("RequestWorkspace", () => {
+	it("reports authentication_required only once when both reads return 401", async () => {
+		const unauthorized = new ApiError(401, {
+			code: "authentication_required",
+			message: "expired",
+		});
+		const onAuthenticationRequired = vi.fn();
+		const api = client({
+			getRequest: vi.fn().mockRejectedValue(unauthorized),
+			listAuditEvents: vi.fn().mockRejectedValue(unauthorized),
+		});
+		render(
+			<RequestWorkspace
+				client={api}
+				session={session}
+				requestId={draft.id}
+				onRequestIdChange={vi.fn()}
+				onSessionChange={vi.fn()}
+				onAuthenticationRequired={onAuthenticationRequired}
+				onNotice={vi.fn()}
+			/>,
+		);
+		await waitFor(() =>
+			expect(onAuthenticationRequired).toHaveBeenCalledOnce(),
+		);
+		expect(screen.queryByText("Could not load request.")).toBeNull();
+	});
+
+	it("ignores a late 401 from a previously selected Request", async () => {
+		let rejectOld!: (reason: unknown) => void;
+		const oldRead = new Promise<Request>((_resolve, reject) => {
+			rejectOld = reject;
+		});
+		const next = { ...draft, id: "next", title: "Next request" };
+		const api = client({
+			getRequest: vi
+				.fn()
+				.mockReturnValueOnce(oldRead)
+				.mockResolvedValueOnce(next),
+		});
+		const onAuthenticationRequired = vi.fn();
+		const props = {
+			client: api,
+			session,
+			onRequestIdChange: vi.fn(),
+			onSessionChange: vi.fn(),
+			onAuthenticationRequired,
+			onNotice: vi.fn(),
+		};
+		const { rerender } = render(
+			<RequestWorkspace {...props} requestId="old" />,
+		);
+		rerender(<RequestWorkspace {...props} requestId="next" />);
+		await screen.findByRole("heading", { name: "Next request" });
+		await act(async () =>
+			rejectOld(
+				new ApiError(401, {
+					code: "authentication_required",
+					message: "expired",
+				}),
+			),
+		);
+		expect(onAuthenticationRequired).not.toHaveBeenCalled();
+		expect(
+			screen.getByRole("heading", { name: "Next request" }),
+		).toBeInTheDocument();
+	});
 	it.each([
 		["title", "😀".repeat(61), ""],
 		["description", "Valid", "😀".repeat(1001)],

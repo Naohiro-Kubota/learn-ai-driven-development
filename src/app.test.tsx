@@ -37,6 +37,36 @@ function clientWith(getSession: ApiClient["getSession"]): ApiClient {
 }
 
 describe("App session bootstrap", () => {
+	it.each(["request", "audit"] as const)(
+		"clears the session promptly when %s read returns 401 and the companion read hangs",
+		async (failingRead) => {
+			window.history.replaceState(null, "", "/?requestId=request-a");
+			const neverSettles = new Promise<never>(() => {});
+			const unauthorized = () =>
+				Promise.reject(
+					new ApiError(401, {
+						code: "authentication_required",
+						message: "expired",
+					}),
+				);
+			const api = {
+				getSession: vi.fn().mockResolvedValue(session),
+				getRequest: vi
+					.fn()
+					.mockImplementation(
+						failingRead === "request" ? unauthorized : () => neverSettles,
+					),
+				listAuditEvents: vi
+					.fn()
+					.mockImplementation(
+						failingRead === "audit" ? unauthorized : () => neverSettles,
+					),
+			} as unknown as ApiClient;
+			render(<App client={api} login={vi.fn()} />);
+			await screen.findByRole("button", { name: "Sign in" });
+			expect(screen.queryByText("Signed in")).toBeNull();
+		},
+	);
 	it("shares a CSRF refresh across workspace and logout, and gates actions until it settles", async () => {
 		window.history.replaceState(null, "", "/?requestId=request-a");
 		const refresh = deferred<Session>();
