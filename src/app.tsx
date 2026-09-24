@@ -36,30 +36,52 @@ export function App({
 	const [selectedRequestId, setSelectedRequestId] = useState(currentRequestId);
 	const [notice, setNotice] = useState<Notice | null>(null);
 	const [logoutPending, setLogoutPending] = useState(false);
+	const [workspaceEpoch, setWorkspaceEpoch] = useState(0);
 	const sessionGeneration = useRef(0);
+	const workspaceEpochRef = useRef(0);
 	const authenticated = useRef(false);
 	const actorMemberId = useRef<string | null>(null);
 	const logoutInFlight = useRef(false);
+	const advanceWorkspaceEpoch = useCallback(() => {
+		workspaceEpochRef.current++;
+		setWorkspaceEpoch(workspaceEpochRef.current);
+	}, []);
 	const onAuthenticationRequired = useCallback(() => {
 		sessionGeneration.current++;
+		advanceWorkspaceEpoch();
 		authenticated.current = false;
 		actorMemberId.current = null;
 		setSelectedRequestId(null);
 		setNotice(null);
 		setSessionState({ kind: "unauthenticated" });
-	}, []);
-	const onSessionChange = useCallback((session: Session) => {
-		if (!authenticated.current) return;
-		if (actorMemberId.current !== session.actor.memberId) {
-			const url = new URL(window.location.href);
-			url.searchParams.delete("requestId");
-			window.history.replaceState(null, "", url);
-			setSelectedRequestId(null);
-			setNotice(null);
-		}
-		actorMemberId.current = session.actor.memberId;
-		setSessionState({ kind: "authenticated", session });
-	}, []);
+	}, [advanceWorkspaceEpoch]);
+	const onSessionChange = useCallback(
+		(session: Session) => {
+			if (!authenticated.current) return;
+			if (actorMemberId.current !== session.actor.memberId) {
+				advanceWorkspaceEpoch();
+				const url = new URL(window.location.href);
+				url.searchParams.delete("requestId");
+				window.history.replaceState(null, "", url);
+				setSelectedRequestId(null);
+				setNotice(null);
+			}
+			actorMemberId.current = session.actor.memberId;
+			setSessionState({ kind: "authenticated", session });
+		},
+		[advanceWorkspaceEpoch],
+	);
+	const onWorkspaceAuthenticationRequired = useCallback(() => {
+		if (workspaceEpochRef.current === workspaceEpoch)
+			onAuthenticationRequired();
+	}, [workspaceEpoch, onAuthenticationRequired]);
+	const onWorkspaceSessionChange = useCallback(
+		(session: Session) => {
+			if (workspaceEpochRef.current === workspaceEpoch)
+				onSessionChange(session);
+		},
+		[workspaceEpoch, onSessionChange],
+	);
 	const isSelectionPath =
 		window.location.pathname === "/organization-selection";
 	const onRequestIdChange = useCallback((id: string | null) => {
@@ -78,6 +100,7 @@ export function App({
 		client.getSession().then(
 			(session) => {
 				if (sessionGeneration.current === id) {
+					advanceWorkspaceEpoch();
 					authenticated.current = true;
 					actorMemberId.current = session.actor.memberId;
 					setSessionState({ kind: "authenticated", session });
@@ -93,7 +116,7 @@ export function App({
 				);
 			},
 		);
-	}, [client]);
+	}, [client, advanceWorkspaceEpoch]);
 
 	useEffect(() => {
 		if (isSelectionPath) return;
@@ -199,8 +222,8 @@ export function App({
 				session={sessionState.session}
 				requestId={selectedRequestId}
 				onRequestIdChange={onRequestIdChange}
-				onSessionChange={onSessionChange}
-				onAuthenticationRequired={onAuthenticationRequired}
+				onSessionChange={onWorkspaceSessionChange}
+				onAuthenticationRequired={onWorkspaceAuthenticationRequired}
 				onNotice={setNotice}
 			/>
 		</main>

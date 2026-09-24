@@ -37,6 +37,57 @@ function clientWith(getSession: ApiClient["getSession"]): ApiClient {
 }
 
 describe("App session bootstrap", () => {
+	it("keeps actor B signed in when actor A's old mutation later returns 401", async () => {
+		window.history.replaceState(null, "", "/?requestId=request-a");
+		const oldMutation = deferred<Request>();
+		const actorB: Session = {
+			actor: { memberId: "member-b", roles: ["requester"] },
+			csrfToken: "csrf-b",
+		};
+		const requestA: Request = {
+			id: "request-a",
+			title: "Actor A request",
+			description: "",
+			status: "draft",
+			version: 1,
+			requesterMemberId: "member-1",
+			approval: null,
+			createdAt: "now",
+			updatedAt: "now",
+		};
+		const api = {
+			getSession: vi
+				.fn()
+				.mockResolvedValueOnce(session)
+				.mockResolvedValueOnce(actorB),
+			getRequest: vi.fn().mockResolvedValue(requestA),
+			listAuditEvents: vi.fn().mockResolvedValue([]),
+			submitRequest: vi.fn().mockReturnValue(oldMutation.promise),
+			logout: vi.fn().mockRejectedValue(
+				new ApiError(403, {
+					code: "csrf_validation_failed",
+					message: "rotated",
+				}),
+			),
+		} as unknown as ApiClient;
+		render(<App client={api} login={vi.fn()} />);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+		await waitFor(() => expect(api.getSession).toHaveBeenCalledTimes(2));
+		await waitFor(() =>
+			expect(screen.queryByText("Actor A request")).toBeNull(),
+		);
+		await act(async () =>
+			oldMutation.reject(
+				new ApiError(401, {
+					code: "authentication_required",
+					message: "expired A",
+				}),
+			),
+		);
+		expect(screen.getByText("Signed in")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+	});
 	it("signs out when an earlier Request's Submit returns 401 after selecting another", async () => {
 		window.history.replaceState(null, "", "/?requestId=request-a");
 		const mutation = deferred<Request>();
