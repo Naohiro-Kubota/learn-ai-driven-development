@@ -40,7 +40,7 @@ function launch(spawnProcess, command, args, options) {
 }
 
 async function command(spawnProcess, name, args, options = {}) {
-	const { input, capture = false, ...spawnOptions } = options;
+	const { input, capture = false, onStart, ...spawnOptions } = options;
 	const child = launch(spawnProcess, name, args, {
 		stdio: [
 			input === undefined ? "ignore" : "pipe",
@@ -49,6 +49,7 @@ async function command(spawnProcess, name, args, options = {}) {
 		],
 		...spawnOptions,
 	});
+	onStart?.(child);
 	let output = "";
 	if (capture && child.child.stdout) {
 		child.child.stdout.setEncoding("utf8");
@@ -59,7 +60,11 @@ async function command(spawnProcess, name, args, options = {}) {
 	}
 	if (input !== undefined && child.child.stdin) child.child.stdin.end(input);
 	const result = await child.done;
-	if (result.code !== 0) throw new Error(`${name} command failed`);
+	if (result.code !== 0) {
+		const error = new Error(`${name} command failed`);
+		error.exitCode = result.code ?? 1;
+		throw error;
+	}
 	return output;
 }
 
@@ -90,31 +95,45 @@ async function waitFor(
 	throw new Error(`E2E readiness deadline exceeded for ${url}`);
 }
 
-async function stopChild(state) {
-	if (!state || state.exited) return;
-	function signal(groupSignal) {
-		if (state.child.pid && process.platform !== "win32") {
-			try {
-				process.kill(-state.child.pid, groupSignal);
-				return;
-			} catch (error) {
-				if (error.code !== "ESRCH") throw error;
-			}
+async function stopChild(
+	state,
+	{ signalProcess, processGroupExists, stopGraceMs },
+) {
+	if (!state) return;
+	const pid = state.child.pid;
+	if (pid && process.platform !== "win32") {
+		if (!processGroupExists(pid)) return;
+		signalProcess(-pid, "SIGTERM");
+		const deadline = Date.now() + stopGraceMs;
+		while (processGroupExists(pid) && Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 100));
 		}
-		state.child.kill(groupSignal);
+		if (processGroupExists(pid)) signalProcess(-pid, "SIGKILL");
+		return;
 	}
-	signal("SIGTERM");
+	if (state.exited) return;
+	state.child.kill("SIGTERM");
 	let timeout;
 	await Promise.race([
 		state.done,
 		new Promise((resolve) => {
-			timeout = setTimeout(resolve, 5000);
+			timeout = setTimeout(resolve, stopGraceMs);
 		}),
 	]);
 	clearTimeout(timeout);
 	if (!state.exited) {
-		signal("SIGKILL");
+		state.child.kill("SIGKILL");
 		await state.done;
+	}
+}
+
+function processGroupExists(pid) {
+	try {
+		process.kill(-pid, 0);
+		return true;
+	} catch (error) {
+		if (error.code === "ESRCH") return false;
+		throw error;
 	}
 }
 
@@ -126,6 +145,11 @@ export async function runStack(deps = {}) {
 	const logger =
 		deps.logger ?? ((message) => process.stderr.write(`${message}\n`));
 	const outerEnv = deps.env ?? process.env;
+	const stopOptions = {
+		signalProcess: deps.signalProcess ?? process.kill.bind(process),
+		processGroupExists: deps.processGroupExists ?? processGroupExists,
+		stopGraceMs: deps.stopGraceMs ?? 5000,
+	};
 	for (const port of ports) {
 		if (!(await portAvailable(port)))
 			throw new Error(`E2E port ${port} is occupied`);
@@ -162,6 +186,7 @@ export async function runStack(deps = {}) {
 	let composeStarted = false;
 	let api;
 	let vite;
+	let playwright;
 	const onSignal = () => controller.abort();
 	process.on("SIGINT", onSignal);
 	process.on("SIGTERM", onSignal);
@@ -210,20 +235,26 @@ export async function runStack(deps = {}) {
 			[api, vite],
 			controller.signal,
 		);
-		await execute("pnpm", ["exec", "playwright", "test"]);
+		try {
+			await execute("pnpm", ["exec", "playwright", "test"], {
+				detached: true,
+				onStart: (state) => {
+					playwright = state;
+				},
+			});
+		} catch (error) {
+			const browserError = new Error("Playwright command failed");
+			browserError.exitCode = error.exitCode ?? 1;
+			throw browserError;
+		}
 		logger("Playwright completed");
 	} catch (error) {
-		failure =
-			error.message === "pnpm command failed"
-				? new Error("Playwright or Vite command failed")
-				: error;
+		failure = error;
 	} finally {
-		process.off("SIGINT", onSignal);
-		process.off("SIGTERM", onSignal);
 		const cleanupErrors = [];
-		for (const child of [vite, api]) {
+		for (const child of [playwright, vite, api]) {
 			try {
-				await stopChild(child);
+				await stopChild(child, stopOptions);
 			} catch (error) {
 				cleanupErrors.push(error);
 			}
@@ -244,6 +275,8 @@ export async function runStack(deps = {}) {
 				[failure, ...cleanupErrors].filter(Boolean),
 				"E2E cleanup failed",
 			);
+		process.off("SIGINT", onSignal);
+		process.off("SIGTERM", onSignal);
 	}
 	if (failure) throw failure;
 }
@@ -254,6 +287,6 @@ if (
 ) {
 	runStack().catch((error) => {
 		process.stderr.write(`${error.message}\n`);
-		process.exitCode = 1;
+		process.exitCode = error.exitCode ?? 1;
 	});
 }
