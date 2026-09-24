@@ -394,6 +394,13 @@ export function RequestWorkspace({
 			.then(
 				(request) => {
 					if (generation.current !== currentGeneration) return;
+					if (kind === "approve") {
+						setRead({ kind: "empty" });
+						onRequestIdChange(null);
+						onNotice({ code: "request_approved", text: "Request approved." });
+						if (session.actor.roles.includes("approver")) loadPending();
+						return;
+					}
 					setRead((current) =>
 						current.kind === "ready" && current.request.id === request.id
 							? { ...current, request }

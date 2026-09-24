@@ -194,7 +194,25 @@ func (r *router) submitRequest(w http.ResponseWriter, request *http.Request) {
 	r.mutateRequest(w, request, r.dependencies.RequestService.Submit)
 }
 func (r *router) approveRequest(w http.ResponseWriter, request *http.Request) {
-	r.mutateRequest(w, request, r.dependencies.RequestService.Approve)
+	actor, ok := r.requestActor(w, request)
+	if !ok {
+		return
+	}
+	var input expectedVersionInput
+	if err := decodeJSONBody(w, request, &input, "expectedVersion"); err != nil {
+		WriteError(w, invalidInputAPIError(err))
+		return
+	}
+	if input.ExpectedVersion < 1 {
+		WriteError(w, invalidInputAPIError(invalidField("expectedVersion", "invalid")))
+		return
+	}
+	result, approval, err := r.dependencies.RequestService.ApproveWithApproval(request.Context(), actor, request.PathValue("requestId"), input.ExpectedVersion)
+	if err != nil {
+		WriteError(w, requestAPIError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, toRequestDTO(result, approval))
 }
 
 func (r *router) mutateRequest(w http.ResponseWriter, request *http.Request, operation func(context.Context, requests.Actor, string, int64) (domain.Request, error)) {
@@ -235,11 +253,15 @@ func (r *router) listPending(w http.ResponseWriter, request *http.Request) {
 	}
 	items := make([]requestDTO, 0, len(results))
 	for _, result := range results {
-		dto, ok := r.approvalDTO(w, request, actor, result)
-		if !ok {
+		approval, err := r.dependencies.RequestService.GetApproval(request.Context(), actor, result.ID)
+		if errors.Is(err, domain.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			WriteError(w, requestAPIError(err))
 			return
 		}
-		items = append(items, dto)
+		items = append(items, toRequestDTO(result, approval))
 	}
 	writeJSON(w, http.StatusOK, pendingRequestListDTO{Requests: items})
 }

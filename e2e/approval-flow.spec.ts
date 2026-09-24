@@ -171,8 +171,22 @@ test("requester and approver complete one request with separate sessions", async
 		await expect(approverPage.getByText("Status: pending")).toBeVisible();
 		await expectFrontendState(approverPage, "/", requestId);
 		await approverPage.getByRole("button", { name: "Approve" }).click();
-		await expect(approverPage.getByText("Status: approved")).toBeVisible();
-		await expectFrontendState(approverPage, "/", requestId);
+		await expect(
+			approverPage.getByRole("alert").getByText("Request approved."),
+		).toBeVisible();
+		await expect(
+			approverPage.getByRole("region", { name: "Request detail" }),
+		).toHaveCount(0);
+		await expectFrontendState(approverPage, "/");
+		const approvedRequestRead = await approver.request.get(
+			`${apiOrigin}/api/v1/requests/${requestId}`,
+		);
+		const approvedAuditRead = await approver.request.get(
+			`${apiOrigin}/api/v1/requests/${requestId}/audit-events`,
+		);
+		expect([approvedRequestRead.status(), approvedAuditRead.status()]).toEqual([
+			404, 404,
+		]);
 		const approverMemberId = await memberId(approverPage);
 		expect(approverMemberId).toBe("member-approver-a");
 		expect(approverMemberId).not.toBe(requesterMemberId);
@@ -187,7 +201,7 @@ test("requester and approver complete one request with separate sessions", async
 				.getByText(/request_approved by member-approver-a/),
 		).toBeVisible();
 		await expectFrontendState(requesterPage, "/", requestId);
-		await expectFrontendState(approverPage, "/", requestId);
+		await expectFrontendState(approverPage, "/");
 		checkRequesterErrors();
 		checkApproverErrors();
 	} finally {

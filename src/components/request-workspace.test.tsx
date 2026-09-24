@@ -508,7 +508,7 @@ describe("RequestWorkspace", () => {
 		expect(screen.getByText("Status: pending")).toBeInTheDocument();
 	});
 
-	it("approves an assigned Pending request and refreshes audit and queue", async () => {
+	it("approves an assigned Pending request, closes the detail, and refreshes the queue", async () => {
 		const pending = {
 			...draft,
 			status: "pending" as const,
@@ -525,7 +525,7 @@ describe("RequestWorkspace", () => {
 				.fn()
 				.mockResolvedValue({ ...pending, status: "approved", version: 4 }),
 		});
-		mount(api, draft.id, {
+		const { onRequestIdChange, onNotice } = mount(api, draft.id, {
 			actor: { memberId: "assignee", roles: ["approver"] },
 			csrfToken: "csrf",
 		});
@@ -533,8 +533,12 @@ describe("RequestWorkspace", () => {
 		await waitFor(() =>
 			expect(api.approveRequest).toHaveBeenCalledWith(draft.id, 3, "csrf"),
 		);
-		await waitFor(() => expect(api.listAuditEvents).toHaveBeenCalledTimes(2));
+		await waitFor(() => expect(onRequestIdChange).toHaveBeenCalledWith(null));
+		expect(api.listAuditEvents).toHaveBeenCalledTimes(1);
 		expect(api.listPending).toHaveBeenCalledTimes(2);
+		expect(onNotice).toHaveBeenCalledWith(
+			expect.objectContaining({ text: "Request approved." }),
+		);
 	});
 
 	it("prevents a repeated click while a mutation is in flight", async () => {

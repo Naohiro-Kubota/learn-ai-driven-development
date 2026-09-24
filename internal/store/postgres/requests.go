@@ -223,7 +223,7 @@ func (r *Repository) ListPending(ctx context.Context, assigneeMemberID string) (
 		FROM requests r
 		JOIN approvals a ON a.request_id = r.id
 		WHERE a.assignee_id = $1 AND a.status = 'pending' AND r.status = 'pending'
-		ORDER BY r.created_at, r.id`, assigneeMemberID)
+		ORDER BY r.updated_at, r.id`, assigneeMemberID)
 	if err != nil {
 		return nil, err
 	}

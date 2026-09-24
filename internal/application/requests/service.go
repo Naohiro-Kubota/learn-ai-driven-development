@@ -91,27 +91,45 @@ func (s *Service) Submit(ctx context.Context, actor Actor, requestID string, exp
 }
 
 func (s *Service) Approve(ctx context.Context, actor Actor, requestID string, expectedVersion int64) (domain.Request, error) {
+	request, _, err := s.ApproveWithApproval(ctx, actor, requestID, expectedVersion)
+	return request, err
+}
+
+// ApproveWithApproval returns the Approval that was validated for the
+// transition, so the mutation response does not depend on a later read.
+func (s *Service) ApproveWithApproval(ctx context.Context, actor Actor, requestID string, expectedVersion int64) (domain.Request, *domain.Approval, error) {
 	request, err := s.repository.Get(ctx, requestID)
 	if err != nil {
-		return domain.Request{}, err
+		return domain.Request{}, nil, err
 	}
 	if request.Status != domain.RequestStatusPending {
-		return domain.Request{}, domain.ErrInvalidState
+		return domain.Request{}, nil, domain.ErrInvalidState
 	}
 	if request.Version != expectedVersion {
-		return domain.Request{}, domain.ErrVersionConflict
+		return domain.Request{}, nil, domain.ErrVersionConflict
 	}
 	approval, err := s.repository.GetApproval(ctx, requestID)
 	if err != nil {
-		return domain.Request{}, err
+		return domain.Request{}, nil, err
+	}
+	if approval == nil {
+		return domain.Request{}, nil, domain.ErrNotFound
 	}
 	if approval.Status != domain.ApprovalStatusPending {
-		return domain.Request{}, domain.ErrInvalidState
+		return domain.Request{}, nil, domain.ErrInvalidState
 	}
 	if approval.AssigneeMemberID != actor.MemberID || !actor.hasRole(domain.RoleApprover) {
-		return domain.Request{}, domain.ErrForbidden
+		return domain.Request{}, nil, domain.ErrForbidden
 	}
-	return s.repository.Approve(ctx, ApproveCommand{RequestID: requestID, AssigneeMemberID: actor.MemberID, ExpectedVersion: expectedVersion, AuditEvent: auditEvent(request, actor.MemberID, "request_approved", s.now())})
+	result, err := s.repository.Approve(ctx, ApproveCommand{RequestID: requestID, AssigneeMemberID: actor.MemberID, ExpectedVersion: expectedVersion, AuditEvent: auditEvent(request, actor.MemberID, "request_approved", s.now())})
+	if err != nil {
+		return domain.Request{}, nil, err
+	}
+	approvedAt := result.UpdatedAt
+	approvedApproval := *approval
+	approvedApproval.Status = domain.ApprovalStatusApproved
+	approvedApproval.ApprovedAt = &approvedAt
+	return result, &approvedApproval, nil
 }
 
 func (s *Service) Get(ctx context.Context, actor Actor, requestID string) (domain.Request, error) {
@@ -126,17 +144,17 @@ func (s *Service) Get(ctx context.Context, actor Actor, requestID string) (domai
 		return request, nil
 	}
 	approval, err := s.repository.GetApproval(ctx, requestID)
-	if err == nil && approval.AssigneeMemberID == actor.MemberID && actor.hasRole(domain.RoleApprover) {
+	if err == nil && approval != nil && request.Status == domain.RequestStatusPending && approval.Status == domain.ApprovalStatusPending && approval.AssigneeMemberID == actor.MemberID && actor.hasRole(domain.RoleApprover) {
 		return request, nil
 	}
 	return domain.Request{}, domain.ErrNotFound
 }
 
 func (s *Service) GetApproval(ctx context.Context, actor Actor, requestID string) (*domain.Approval, error) {
-	if _, err := s.Get(ctx, actor, requestID); err != nil {
-		return nil, err
-	}
 	approval, err := s.repository.GetApproval(ctx, requestID)
+	if _, visibilityErr := s.Get(ctx, actor, requestID); visibilityErr != nil {
+		return nil, visibilityErr
+	}
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil, nil
 	}
@@ -154,10 +172,11 @@ func (s *Service) ListPending(ctx context.Context, actor Actor) ([]domain.Reques
 }
 
 func (s *Service) ListAuditEvents(ctx context.Context, actor Actor, requestID string) ([]domain.AuditEvent, error) {
+	events, err := s.repository.ListAuditEvents(ctx, requestID)
 	if _, err := s.Get(ctx, actor, requestID); err != nil {
 		return nil, err
 	}
-	return s.repository.ListAuditEvents(ctx, requestID)
+	return events, err
 }
 
 func (a Actor) hasRole(want domain.Role) bool {

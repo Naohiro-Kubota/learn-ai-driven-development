@@ -1,7 +1,10 @@
 import type { ReactElement } from "react";
 import type { ErrorCode } from "../api/types";
 
-export type Notice = { code: ErrorCode | "transport_failure"; text: string };
+export type Notice = {
+	code: ErrorCode | "transport_failure" | "request_approved";
+	text: string;
+};
 
 export function ErrorNotice({
 	notice,

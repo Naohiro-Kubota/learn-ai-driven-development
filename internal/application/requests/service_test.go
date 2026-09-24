@@ -201,6 +201,44 @@ func TestApproveRejectsNonPendingApprovalWithoutAuditEvent(t *testing.T) {
 	}
 }
 
+func TestApproveWithApprovalReturnsTransitionDataAndPreservesErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		request     domain.Request
+		actor       Actor
+		approvalErr error
+		wantErr     error
+	}{
+		{"assigned pending", pendingRequest(), approver("approver"), nil, nil},
+		{"unassigned pending", pendingRequest(), approver("other"), nil, domain.ErrForbidden},
+		{"approved request", func() domain.Request { r := pendingRequest(); r.Status = domain.RequestStatusApproved; return r }(), approver("approver"), nil, domain.ErrInvalidState},
+		{"requester draft", draftRequest(), requester("requester"), nil, domain.ErrInvalidState},
+		{"approval read failure", pendingRequest(), approver("approver"), errors.New("database unavailable"), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newFakeRepository(tc.request)
+			repo.approvalErr = tc.approvalErr
+			request, approval, err := NewService(repo).ApproveWithApproval(context.Background(), tc.actor, "request-1", 2)
+			if tc.approvalErr != nil {
+				if err != tc.approvalErr {
+					t.Fatalf("error = %v, want database error", err)
+				}
+			} else if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tc.wantErr)
+			}
+			if err != nil {
+				if repo.AuditEventCount() != 0 {
+					t.Fatal("failed approval wrote audit event")
+				}
+				return
+			}
+			if request.Status != domain.RequestStatusApproved || approval == nil || approval.ID != "approval-1" || approval.Status != domain.ApprovalStatusApproved || approval.ApprovedAt == nil || !approval.ApprovedAt.Equal(request.UpdatedAt) {
+				t.Fatalf("ApproveWithApproval() = %#v, %#v", request, approval)
+			}
+		})
+	}
+}
+
 func TestGetAndListAuditEventsHideUnauthorizedRequests(t *testing.T) {
 	repo := newFakeRepository(pendingRequest())
 	repo.auditEvents = []domain.AuditEvent{{RequestID: "request-1", ActorMemberID: "requester", Type: "request_submitted"}}
@@ -230,6 +268,90 @@ func TestGetAndListAuditEventsHideUnauthorizedRequests(t *testing.T) {
 			}
 			if testCase.wantErr == nil && len(events) != 1 {
 				t.Errorf("ListAuditEvents() count = %d, want 1", len(events))
+			}
+		})
+	}
+}
+
+func TestAssignedApproverCannotReadApprovedRequestOrAudit(t *testing.T) {
+	repo := newFakeRepository(pendingRequest())
+	request := repo.requests["request-1"]
+	request.Status = domain.RequestStatusApproved
+	repo.requests[request.ID] = request
+	repo.approval.Status = domain.ApprovalStatusApproved
+	service := NewService(repo)
+	for _, operation := range []string{"Get", "GetApproval", "ListAuditEvents"} {
+		t.Run(operation, func(t *testing.T) {
+			var err error
+			switch operation {
+			case "Get":
+				_, err = service.Get(context.Background(), approver("approver"), request.ID)
+			case "GetApproval":
+				_, err = service.GetApproval(context.Background(), approver("approver"), request.ID)
+			case "ListAuditEvents":
+				_, err = service.ListAuditEvents(context.Background(), approver("approver"), request.ID)
+			}
+			if !errors.Is(err, domain.ErrNotFound) {
+				t.Fatalf("%s() error = %v, want ErrNotFound", operation, err)
+			}
+		})
+	}
+	if _, err := service.Get(context.Background(), requester("requester"), request.ID); err != nil {
+		t.Fatalf("requester Get() error = %v", err)
+	}
+}
+
+func TestGetHidesRequestWhenApprovalIsMissing(t *testing.T) {
+	repo := newFakeRepository(pendingRequest())
+	repo.nilApproval = true
+	_, err := NewService(repo).Get(context.Background(), approver("approver"), "request-1")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("Get() error = %v, want ErrNotFound", err)
+	}
+}
+
+type approveDuringReadRepository struct {
+	*fakeRepository
+	onApprovalRead bool
+	onAuditRead    bool
+}
+
+func (r *approveDuringReadRepository) markApproved() {
+	request := r.requests["request-1"]
+	request.Status = domain.RequestStatusApproved
+	r.requests[request.ID] = request
+	r.approval.Status = domain.ApprovalStatusApproved
+}
+
+func (r *approveDuringReadRepository) GetApproval(ctx context.Context, id string) (*domain.Approval, error) {
+	approval, err := r.fakeRepository.GetApproval(ctx, id)
+	if r.onApprovalRead {
+		r.markApproved()
+	}
+	return approval, err
+}
+
+func (r *approveDuringReadRepository) ListAuditEvents(ctx context.Context, id string) ([]domain.AuditEvent, error) {
+	events, err := r.fakeRepository.ListAuditEvents(ctx, id)
+	if r.onAuditRead {
+		r.markApproved()
+	}
+	return events, err
+}
+
+func TestApproverReadDoesNotReturnDataAfterConcurrentApproval(t *testing.T) {
+	for _, operation := range []string{"GetApproval", "ListAuditEvents"} {
+		t.Run(operation, func(t *testing.T) {
+			repo := &approveDuringReadRepository{fakeRepository: newFakeRepository(pendingRequest()), onApprovalRead: operation == "GetApproval", onAuditRead: operation == "ListAuditEvents"}
+			service := NewService(repo)
+			var err error
+			if operation == "GetApproval" {
+				_, err = service.GetApproval(context.Background(), approver("approver"), "request-1")
+			} else {
+				_, err = service.ListAuditEvents(context.Background(), approver("approver"), "request-1")
+			}
+			if !errors.Is(err, domain.ErrNotFound) {
+				t.Fatalf("%s() error = %v, want ErrNotFound", operation, err)
 			}
 		})
 	}
@@ -334,6 +456,8 @@ func assertAuditSnapshot(t *testing.T, events []domain.AuditEvent, eventType, ac
 }
 
 type fakeRepository struct {
+	nilApproval             bool
+	approvalErr             error
 	requests                map[string]domain.Request
 	approval                domain.Approval
 	defaultApproverID       string
@@ -369,6 +493,12 @@ func (r *fakeRepository) Get(_ context.Context, requestID string) (domain.Reques
 	return request, nil
 }
 func (r *fakeRepository) GetApproval(_ context.Context, requestID string) (*domain.Approval, error) {
+	if r.approvalErr != nil {
+		return nil, r.approvalErr
+	}
+	if r.nilApproval {
+		return nil, nil
+	}
 	if request, ok := r.requests[requestID]; !ok || request.Status == domain.RequestStatusDraft {
 		return nil, domain.ErrNotFound
 	}
