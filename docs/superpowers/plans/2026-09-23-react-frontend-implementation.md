@@ -226,6 +226,8 @@ git commit -m "feat: add request approval workflow screens"
 
 ### Task 4: 再現可能なbrowser E2Eとdeveloper evidenceを追加する
 
+**完了（2026-09-24）:** 実装、レビュー、実ブラウザ E2E と開発者向け文書を完了した。実際の差分、RED/GREEN、検証結果、環境制約は [Task 4 詳細計画](2026-09-24-react-frontend-task-4.md) と [完了記録](../../development/frontend-completion-2026-09-24.md) を正本とする。以下の当初計画の未チェック項目と 2026-09-23 の予定ファイル名は履歴として残す。正規の認証通信には cookie や CSRF header が載るため、「network fixture に raw cookie 等がない」という当初表現は、保存 artifact・URL・storage・console への漏出を防ぐ検証として具体化した。
+
 **ファイル:**
 - 作成: `playwright.config.ts`、`e2e/approval-flow.spec.ts`、`compose.e2e.yaml`、`scripts/e2e-stack.mjs`、`.env.example`、`docs/development/frontend-local-development.md`、`docs/development/frontend-completion-2026-09-23.md`
 - 変更: `package.json`、`docs/development/toolchain.md`
