@@ -174,6 +174,8 @@ git commit -m "feat: add typed React API client"
 
 ### Task 3: Vertical Slice画面とrecovery behaviorを実装する
 
+**完了（2026-09-24）:** 実装とタスク別・全体レビューを完了した。実際の差分、RED/GREEN、検証結果、残るTask 4 browser E2Eは[Task 3詳細計画](2026-09-23-react-frontend-task-3.md)と[完了記録](../../development/react-frontend-task3-completion-2026-09-24.md)を正本とする。以下の当初計画の未チェック項目は履歴として残す。
+
 **ファイル:**
 - 作成: `src/components/sign-in.tsx`、`organization-selection.tsx`、`request-workspace.tsx`、`request-form.tsx`、`request-detail.tsx`、`pending-list.tsx`、`audit-history.tsx`、`error-notice.tsx`、`request-workspace.test.tsx`、`organization-selection.test.tsx`、`src/styles.css`
 - 変更: `src/app.tsx`

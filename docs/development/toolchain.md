@@ -43,7 +43,7 @@ Go sourceはADR-012に従い`gofmt`でformatし、`go vet ./...`で静的解析�
 - Keycloak imageはtagだけで運用せず、provisioning時に対応するcontainer digestを記録する。development modeはローカル/E2E限定である。
 - PostgreSQL migration統合テストは`pnpm run test:db`を使用する。これは`compose.test.yaml`で一時的なPostgreSQL 17.11 containerを起動し、`TEST_DATABASE_URL`を注入してから、終了時にcontainerとvolumeを破棄する。
 
-## Frontend Task 2 の起動と検証
+## Frontend Task 3 の起動と検証
 
 Frontend は ADR-015 に従い API と異なる origin で起動する。loopback 開発例では API 側の `APP_FRONTEND_ORIGIN=http://127.0.0.1:5173` と、Frontend 側の `VITE_API_ORIGIN=http://127.0.0.1:8080` を対応させる。`VITE_API_ORIGIN` は絶対 HTTP(S) origin とし、path、query、fragment、userinfo は付けない。HTTP は loopback 開発のみ許す。
 
@@ -57,4 +57,4 @@ pnpm run lint
 pnpm run build
 ```
 
-この段階の画面は session bootstrap、Sign in、再試行表示までを提供する。Request と Organization 選択の操作画面は React Frontend 実装計画の Task 3、実ブラウザでの二者承認フローは Task 4 の範囲である。
+画面は session bootstrap、Sign in、Organization 選択、Draft 作成・編集、Submit、割当済み Pending 一覧、Approve、Request と Audit の確認、logout と明示的なエラー回復を提供する。実ブラウザでの OIDC Cookie 引き継ぎと二者承認フローの検証は React Frontend 実装計画の Task 4 の範囲である。
