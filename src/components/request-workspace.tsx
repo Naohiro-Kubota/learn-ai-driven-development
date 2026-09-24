@@ -93,23 +93,25 @@ export function RequestWorkspace({
 			auditRefreshSequence.current++;
 			setAuditReadFailed(false);
 			setRead({ kind: "loading" });
-			Promise.allSettled([
-				client.getRequest(id),
-				client.listAuditEvents(id),
-			]).then(([requestResult, eventsResult]) => {
-				if (generation.current !== current) return;
+			let authenticationHandled = false;
+			const checkAuthentication = (error: unknown): never => {
 				if (
-					(requestResult.status === "rejected" &&
-						requestResult.reason instanceof ApiError &&
-						requestResult.reason.body.code === "authentication_required") ||
-					(eventsResult.status === "rejected" &&
-						eventsResult.reason instanceof ApiError &&
-						eventsResult.reason.body.code === "authentication_required")
+					generation.current === current &&
+					!authenticationHandled &&
+					error instanceof ApiError &&
+					error.body.code === "authentication_required"
 				) {
+					authenticationHandled = true;
 					setRead({ kind: "empty" });
 					onAuthenticationRequired();
-					return;
 				}
+				throw error;
+			};
+			Promise.allSettled([
+				client.getRequest(id).catch(checkAuthentication),
+				client.listAuditEvents(id).catch(checkAuthentication),
+			]).then(([requestResult, eventsResult]) => {
+				if (generation.current !== current || authenticationHandled) return;
 				if (
 					requestResult.status === "rejected" ||
 					eventsResult.status === "rejected"
