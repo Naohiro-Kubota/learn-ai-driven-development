@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -250,6 +251,27 @@ func callbackTokenResponse(t *testing.T, claimOverrides map[string]any) string {
 		t.Fatal(err)
 	}
 	return string(response)
+}
+
+func TestBeginLoginRequestsOpenIDScope(t *testing.T) {
+	provider := newOIDCTestProvider(t)
+	defer provider.server.Close()
+	store := &oidcStoreFake{}
+	a, err := NewOIDCAuthenticator(context.Background(), provider.config(), store, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, err := a.BeginLogin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizationURL, err := url.Parse(start.AuthorizationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(strings.Fields(authorizationURL.Query().Get("scope")), "openid") {
+		t.Fatal("authorization scope does not include openid")
+	}
 }
 
 func TestOIDCCompleteLoginVerifiesTokenAndBranchesByMembershipCount(t *testing.T) {
