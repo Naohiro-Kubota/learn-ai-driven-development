@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 import { runStack } from "./e2e-stack.mjs";
 
@@ -262,4 +263,41 @@ test("preserves Playwright's nonzero exit code", async () => {
 		assert.equal(error.exitCode, 2);
 		return true;
 	});
+});
+
+test("prints only validated Playwright diagnostic fields from mixed raw output", async () => {
+	const { deps, log } = fakeDeps();
+	const originalSpawn = deps.spawn;
+	deps.spawn = (command, args, options) => {
+		if (!args.includes("playwright"))
+			return originalSpawn(command, args, options);
+		const child = new EventEmitter();
+		child.stdout = new PassThrough();
+		child.stderr = new PassThrough();
+		child.kill = () => {};
+		queueMicrotask(() => {
+			child.stdout.write("raw token=private-sentinel\nE2E_DIAG");
+			child.stdout.write(
+				'NOSTIC:{"phase":"callback","status":400,"code":"invalid_auth_transaction","cookiePresent":true,"pathname":"/","testId":"approval_flow","file":"e2e/approval-flow.spec.ts","line":85}\n',
+			);
+			child.stderr.write(
+				'E2E_DIAGNOSTIC:{"phase":"callback","status":400,"code":"private-sentinel","cookiePresent":true,"pathname":"/"}\n',
+			);
+			child.stderr.write(
+				'E2E_DIAGNOSTIC:{"phase":"callback","status":400,"code":"unknown","cookiePresent":true,"pathname":"/","rawCookie":"private-sentinel"}\n',
+			);
+			child.stdout.end();
+			child.stderr.end();
+			child.emit("exit", 1);
+		});
+		return child;
+	};
+	await assert.rejects(runStack(deps), /Playwright/);
+	assert.deepEqual(
+		log.filter((line) => line.startsWith("E2E diagnostic:")),
+		[
+			"E2E diagnostic: test=approval_flow file=e2e/approval-flow.spec.ts:85 phase=callback status=400 code=invalid_auth_transaction cookiePresent=true pathname=/",
+		],
+	);
+	assert.equal(log.join(" ").includes("private-sentinel"), false);
 });

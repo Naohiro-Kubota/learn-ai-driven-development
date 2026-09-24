@@ -10,6 +10,111 @@ const frontendOrigin = "http://127.0.0.1:5173";
 const apiOrigin = "http://127.0.0.1:8080";
 const issuer = "http://127.0.0.1:8081/realms/approval-flow-dev";
 const ports = [8080, 8081, 5173, 55432];
+const diagnosticMarker = "E2E_DIAGNOSTIC:";
+const diagnosticCodes = new Set([
+	"invalid_auth_transaction",
+	"internal_error",
+	"authentication_required",
+	"forbidden",
+	"csrf_validation_failed",
+	"invalid_request",
+	"unknown",
+]);
+const diagnosticPhases = new Set([
+	"callback",
+	"login",
+	"selection",
+	"request",
+	"approval",
+]);
+const diagnosticPaths = new Set([
+	"/",
+	"/organization-selection",
+	"/auth/oidc/callback",
+	"/auth/oidc/organization-selection",
+]);
+
+function validatedDiagnostic(line) {
+	const marker = line.indexOf(diagnosticMarker);
+	if (marker < 0) return;
+	let value;
+	try {
+		value = JSON.parse(line.slice(marker + diagnosticMarker.length).trim());
+	} catch {
+		return;
+	}
+	if (!value || typeof value !== "object" || Array.isArray(value)) return;
+	const allowedKeys = new Set([
+		"phase",
+		"status",
+		"code",
+		"cookiePresent",
+		"pathname",
+		"testId",
+		"file",
+		"line",
+	]);
+	if (Object.keys(value).some((key) => !allowedKeys.has(key))) return;
+	if (!diagnosticPhases.has(value.phase) || !diagnosticCodes.has(value.code))
+		return;
+	if (
+		value.status !== null &&
+		(!Number.isInteger(value.status) ||
+			value.status < 100 ||
+			value.status > 599)
+	)
+		return;
+	if (value.cookiePresent !== null && typeof value.cookiePresent !== "boolean")
+		return;
+	if (value.pathname !== null && !diagnosticPaths.has(value.pathname)) return;
+	if (
+		value.testId !== undefined &&
+		value.testId !== "approval_flow" &&
+		value.testId !== "organization_selection"
+	)
+		return;
+	if (value.file !== undefined && value.file !== "e2e/approval-flow.spec.ts")
+		return;
+	if (
+		value.line !== undefined &&
+		(!Number.isInteger(value.line) || value.line < 1 || value.line > 1000)
+	)
+		return;
+	const fields = ["E2E diagnostic:"];
+	if (value.testId !== undefined) fields.push(`test=${value.testId}`);
+	if (value.file !== undefined)
+		fields.push(
+			`file=${value.file}${value.line === undefined ? "" : `:${value.line}`}`,
+		);
+	fields.push(
+		`phase=${value.phase}`,
+		`status=${value.status ?? "none"}`,
+		`code=${value.code}`,
+		`cookiePresent=${value.cookiePresent ?? "unknown"}`,
+		`pathname=${value.pathname ?? "unknown"}`,
+	);
+	return fields.join(" ");
+}
+
+function collectDiagnosticLines(stream, emit) {
+	if (!stream) return;
+	stream.setEncoding("utf8");
+	let pending = "";
+	stream.on("data", (chunk) => {
+		pending += chunk;
+		let newline = pending.indexOf("\n");
+		while (newline >= 0) {
+			const line = pending.slice(0, newline);
+			if (line.length <= 2048) {
+				const diagnostic = validatedDiagnostic(line);
+				if (diagnostic) emit(diagnostic);
+			}
+			pending = pending.slice(newline + 1);
+			newline = pending.indexOf("\n");
+		}
+		if (pending.length > 2048) pending = "";
+	});
+}
 
 async function checkPort(port) {
 	return new Promise((resolve, reject) => {
@@ -43,16 +148,26 @@ function launch(spawnProcess, command, args, options) {
 }
 
 async function command(spawnProcess, name, args, options = {}) {
-	const { input, capture = false, onStart, ...spawnOptions } = options;
+	const {
+		input,
+		capture = false,
+		onStart,
+		onDiagnostic,
+		...spawnOptions
+	} = options;
 	const child = launch(spawnProcess, name, args, {
 		stdio: [
 			input === undefined ? "ignore" : "pipe",
-			capture ? "pipe" : "ignore",
-			"ignore",
+			capture || onDiagnostic ? "pipe" : "ignore",
+			onDiagnostic ? "pipe" : "ignore",
 		],
 		...spawnOptions,
 	});
 	onStart?.(child);
+	if (onDiagnostic) {
+		collectDiagnosticLines(child.child.stdout, onDiagnostic);
+		collectDiagnosticLines(child.child.stderr, onDiagnostic);
+	}
 	let output = "";
 	if (capture && child.child.stdout) {
 		child.child.stdout.setEncoding("utf8");
@@ -265,6 +380,7 @@ export async function runStack(deps = {}) {
 		try {
 			await execute("pnpm", ["exec", "playwright", "test"], {
 				detached: true,
+				onDiagnostic: logger,
 				onStart: (state) => {
 					playwright = state;
 				},
