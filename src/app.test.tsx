@@ -37,6 +37,108 @@ function clientWith(getSession: ApiClient["getSession"]): ApiClient {
 }
 
 describe("App session bootstrap", () => {
+	it("shares a CSRF refresh across workspace and logout, and gates actions until it settles", async () => {
+		window.history.replaceState(null, "", "/?requestId=request-a");
+		const refresh = deferred<Session>();
+		const csrfError = new ApiError(403, {
+			code: "csrf_validation_failed",
+			message: "stale",
+		});
+		const api = {
+			getSession: vi
+				.fn()
+				.mockResolvedValueOnce(session)
+				.mockReturnValueOnce(refresh.promise),
+			getRequest: vi.fn().mockResolvedValue({
+				id: "request-a",
+				title: "A",
+				description: "",
+				status: "draft",
+				version: 1,
+				requesterMemberId: "member-1",
+				approval: null,
+				createdAt: "now",
+				updatedAt: "now",
+			}),
+			listAuditEvents: vi.fn().mockResolvedValue([]),
+			submitRequest: vi
+				.fn()
+				.mockRejectedValueOnce(csrfError)
+				.mockResolvedValueOnce({
+					id: "request-a",
+					title: "A",
+					description: "",
+					status: "pending",
+					version: 2,
+					requesterMemberId: "member-1",
+					approval: null,
+					createdAt: "now",
+					updatedAt: "now",
+				}),
+			logout: vi.fn().mockRejectedValue(csrfError),
+		} as unknown as ApiClient;
+		render(<App client={api} login={vi.fn()} />);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		await waitFor(() => expect(api.getSession).toHaveBeenCalledTimes(2));
+		fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+		expect(api.logout).not.toHaveBeenCalled();
+		fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+		expect(api.submitRequest).toHaveBeenCalledTimes(1);
+		await act(async () =>
+			refresh.resolve({ ...session, csrfToken: "rotated" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+		await waitFor(() =>
+			expect(api.submitRequest).toHaveBeenLastCalledWith(
+				"request-a",
+				1,
+				"rotated",
+			),
+		);
+	});
+	it("coalesces overlapping workspace and logout CSRF failures into one session read", async () => {
+		window.history.replaceState(null, "", "/?requestId=request-a");
+		const submit = deferred<Request>();
+		const logout = deferred<void>();
+		const refresh = deferred<Session>();
+		const csrfError = new ApiError(403, {
+			code: "csrf_validation_failed",
+			message: "stale",
+		});
+		const api = {
+			getSession: vi
+				.fn()
+				.mockResolvedValueOnce(session)
+				.mockReturnValueOnce(refresh.promise),
+			getRequest: vi.fn().mockResolvedValue({
+				id: "request-a",
+				title: "A",
+				description: "",
+				status: "draft",
+				version: 1,
+				requesterMemberId: "member-1",
+				approval: null,
+				createdAt: "now",
+				updatedAt: "now",
+			}),
+			listAuditEvents: vi.fn().mockResolvedValue([]),
+			submitRequest: vi.fn().mockReturnValue(submit.promise),
+			logout: vi.fn().mockReturnValue(logout.promise),
+		} as unknown as ApiClient;
+		render(<App client={api} login={vi.fn()} />);
+		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+		fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+		await act(async () => {
+			submit.reject(csrfError);
+			logout.reject(csrfError);
+		});
+		await waitFor(() => expect(api.getSession).toHaveBeenCalledTimes(2));
+		await act(async () =>
+			refresh.resolve({ ...session, csrfToken: "rotated" }),
+		);
+		expect(api.getSession).toHaveBeenCalledTimes(2);
+		expect(screen.getByText("Signed in")).toBeInTheDocument();
+	});
 	it("keeps actor B signed in when actor A's old mutation later returns 401", async () => {
 		window.history.replaceState(null, "", "/?requestId=request-a");
 		const oldMutation = deferred<Request>();
@@ -296,7 +398,7 @@ describe("App session bootstrap", () => {
 		expect(logout).toHaveBeenLastCalledWith("rotated");
 	});
 
-	it("does not restore a session from a late CSRF refresh after logout", async () => {
+	it("waits for CSRF recovery before allowing logout with the refreshed token", async () => {
 		window.history.replaceState(null, "", "/?requestId=request-1");
 		const refresh = deferred<Session>();
 		const getSession = vi
@@ -330,8 +432,11 @@ describe("App session bootstrap", () => {
 		fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
 		await waitFor(() => expect(getSession).toHaveBeenCalledTimes(2));
 		fireEvent.click(screen.getByRole("button", { name: "Log out" }));
-		await screen.findByRole("button", { name: "Sign in" });
+		expect(client.logout).not.toHaveBeenCalled();
 		await act(async () => refresh.resolve({ ...session, csrfToken: "late" }));
+		fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+		await screen.findByRole("button", { name: "Sign in" });
+		expect(client.logout).toHaveBeenCalledWith("late");
 		expect(screen.queryByText("Signed in")).toBeNull();
 	});
 

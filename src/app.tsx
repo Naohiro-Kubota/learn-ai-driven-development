@@ -42,6 +42,8 @@ export function App({
 	const authenticated = useRef(false);
 	const actorMemberId = useRef<string | null>(null);
 	const logoutInFlight = useRef(false);
+	const refreshInFlight = useRef<Promise<Session> | null>(null);
+	const [refreshPending, setRefreshPending] = useState(false);
 	const advanceWorkspaceEpoch = useCallback(() => {
 		workspaceEpochRef.current++;
 		logoutInFlight.current = false;
@@ -84,6 +86,23 @@ export function App({
 		},
 		[workspaceEpoch, onSessionChange],
 	);
+	const refreshSession = useCallback((): Promise<Session> => {
+		if (refreshInFlight.current) return refreshInFlight.current;
+		const epoch = workspaceEpochRef.current;
+		setRefreshPending(true);
+		const refresh = client.getSession().then((session) => {
+			if (workspaceEpochRef.current === epoch) onSessionChange(session);
+			return session;
+		});
+		const shared = refresh.finally(() => {
+			if (refreshInFlight.current === shared) {
+				refreshInFlight.current = null;
+				setRefreshPending(false);
+			}
+		});
+		refreshInFlight.current = shared;
+		return shared;
+	}, [client, onSessionChange]);
 	const isSelectionPath =
 		window.location.pathname === "/organization-selection";
 	const onRequestIdChange = useCallback((id: string | null) => {
@@ -156,7 +175,7 @@ export function App({
 		);
 	}
 	const logout = () => {
-		if (logoutInFlight.current) return;
+		if (logoutInFlight.current || refreshInFlight.current) return;
 		const epoch = workspaceEpochRef.current;
 		const isCurrentSession = () => workspaceEpochRef.current === epoch;
 		logoutInFlight.current = true;
@@ -181,9 +200,7 @@ export function App({
 						error.body.code === "csrf_validation_failed"
 					) {
 						try {
-							const refreshed = await client.getSession();
-							if (!isCurrentSession()) return;
-							onSessionChange(refreshed);
+							await refreshSession();
 							if (!isCurrentSession()) return;
 							setNotice({
 								code: "csrf_validation_failed",
@@ -223,7 +240,11 @@ export function App({
 	return (
 		<main>
 			<h1>Signed in</h1>
-			<button type="button" onClick={logout} disabled={logoutPending}>
+			<button
+				type="button"
+				onClick={logout}
+				disabled={logoutPending || refreshPending}
+			>
 				Log out
 			</button>
 			{notice && <ErrorNotice notice={notice} />}
@@ -234,6 +255,8 @@ export function App({
 				requestId={selectedRequestId}
 				onRequestIdChange={onRequestIdChange}
 				onSessionChange={onWorkspaceSessionChange}
+				onRefreshSession={refreshSession}
+				mutationBlocked={() => refreshInFlight.current !== null}
 				onAuthenticationRequired={onWorkspaceAuthenticationRequired}
 				onNotice={setNotice}
 			/>
