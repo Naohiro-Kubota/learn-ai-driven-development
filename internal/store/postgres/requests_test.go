@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	apprequests "github.com/Naohiro-Kubota/learn-ai-driven-development/internal/application/requests"
 	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/domain"
@@ -347,6 +348,47 @@ func TestListPendingReturnsOnlyAssignedPendingRequests(t *testing.T) {
 	}
 	if len(requests) != 0 {
 		t.Fatalf("unassigned ListPending() = %#v", requests)
+	}
+}
+
+func TestListPendingOrdersBySubmissionTime(t *testing.T) {
+	db := openWorkflowTestDatabase(t)
+	seed := seedWorkflow(t, db)
+	repository := NewRepository(db)
+	ctx := context.Background()
+	base := time.Date(2026, time.September, 21, 12, 0, 0, 0, time.UTC)
+	create := func(title string, at time.Time) domain.Request {
+		t.Helper()
+		draft := newDraft(seed)
+		draft.Title = title
+		draft.CreatedAt = at
+		draft.UpdatedAt = at
+		created, err := repository.CreateDraft(ctx, createDraftCommand(draft, seed.requesterID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return created
+	}
+	firstCreated := create("Created first", base)
+	secondCreated := create("Created second", base.Add(time.Minute))
+	submit := func(request domain.Request, at time.Time) domain.Request {
+		t.Helper()
+		command := submitCommand(request, seed)
+		command.AuditEvent.OccurredAt = at
+		pending, err := repository.Submit(ctx, command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pending
+	}
+	firstSubmitted := submit(secondCreated, base.Add(2*time.Minute))
+	secondSubmitted := submit(firstCreated, base.Add(3*time.Minute))
+	requests, err := repository.ListPending(ctx, seed.approverID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 || requests[0].ID != firstSubmitted.ID || requests[1].ID != secondSubmitted.ID {
+		t.Fatalf("ListPending() order = %#v, want [%s, %s]", requests, firstSubmitted.ID, secondSubmitted.ID)
 	}
 }
 

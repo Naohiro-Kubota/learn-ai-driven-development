@@ -8,7 +8,7 @@ Status: Accepted ADR configuration
 
 | Component | Fixed version | Pin location |
 | --- | --- | --- |
-| Go | 1.27.1 | `.go-version`, `go.mod` `toolchain` |
+| Go | 1.27.1 | `.go-version`, `go.mod` `go` directive |
 | Node.js | 26.9.0 | `.node-version`, `package.json` `engines` |
 | pnpm | 12.5.1 | `package.json` `packageManager` / `engines` |
 | TypeScript | 7.0.2 | `package.json`, `pnpm-lock.yaml` |

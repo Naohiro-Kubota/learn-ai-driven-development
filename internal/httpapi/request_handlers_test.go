@@ -50,14 +50,15 @@ func TestRequestMutationsReportIdentifiableInvalidFields(t *testing.T) {
 }
 
 type requestServiceFake struct {
-	create   func(context.Context, requests.Actor, string, string, string) (domain.Request, error)
-	update   func(context.Context, requests.Actor, string, int64, string, string) (domain.Request, error)
-	submit   func(context.Context, requests.Actor, string, int64) (domain.Request, error)
-	approve  func(context.Context, requests.Actor, string, int64) (domain.Request, error)
-	get      func(context.Context, requests.Actor, string) (domain.Request, error)
-	approval func(context.Context, requests.Actor, string) (*domain.Approval, error)
-	pending  func(context.Context, requests.Actor) ([]domain.Request, error)
-	audit    func(context.Context, requests.Actor, string) ([]domain.AuditEvent, error)
+	create              func(context.Context, requests.Actor, string, string, string) (domain.Request, error)
+	update              func(context.Context, requests.Actor, string, int64, string, string) (domain.Request, error)
+	submit              func(context.Context, requests.Actor, string, int64) (domain.Request, error)
+	approve             func(context.Context, requests.Actor, string, int64) (domain.Request, error)
+	approveWithApproval func(context.Context, requests.Actor, string, int64) (domain.Request, *domain.Approval, error)
+	get                 func(context.Context, requests.Actor, string) (domain.Request, error)
+	approval            func(context.Context, requests.Actor, string) (*domain.Approval, error)
+	pending             func(context.Context, requests.Actor) ([]domain.Request, error)
+	audit               func(context.Context, requests.Actor, string) ([]domain.AuditEvent, error)
 }
 
 func (f *requestServiceFake) CreateDraft(c context.Context, a requests.Actor, o, t, d string) (domain.Request, error) {
@@ -72,10 +73,24 @@ func (f *requestServiceFake) Submit(c context.Context, a requests.Actor, id stri
 func (f *requestServiceFake) Approve(c context.Context, a requests.Actor, id string, v int64) (domain.Request, error) {
 	return f.approve(c, a, id, v)
 }
+func (f *requestServiceFake) ApproveWithApproval(c context.Context, a requests.Actor, id string, v int64) (domain.Request, *domain.Approval, error) {
+	if f.approveWithApproval != nil {
+		return f.approveWithApproval(c, a, id, v)
+	}
+	request, err := f.approve(c, a, id, v)
+	if err != nil {
+		return domain.Request{}, nil, err
+	}
+	approval, err := f.GetApproval(c, a, id)
+	return request, approval, err
+}
 func (f *requestServiceFake) Get(c context.Context, a requests.Actor, id string) (domain.Request, error) {
 	return f.get(c, a, id)
 }
 func (f *requestServiceFake) GetApproval(c context.Context, a requests.Actor, id string) (*domain.Approval, error) {
+	if f.approval == nil {
+		return nil, domain.ErrNotFound
+	}
 	return f.approval(c, a, id)
 }
 func (f *requestServiceFake) ListPending(c context.Context, a requests.Actor) ([]domain.Request, error) {
@@ -233,6 +248,28 @@ func TestRequestGetDoesNotRequireCSRFAndPendingEnrichesEveryEntry(t *testing.T) 
 	}
 }
 
+func TestPendingListSkipsRequestApprovedDuringEnrichment(t *testing.T) {
+	d := requestTestDependencies()
+	d.RequestService = &requestServiceFake{
+		pending: func(context.Context, requests.Actor) ([]domain.Request, error) {
+			return []domain.Request{{ID: "just-approved", Status: domain.RequestStatusPending}, {ID: "still-pending", Status: domain.RequestStatusPending}}, nil
+		},
+		approval: func(_ context.Context, _ requests.Actor, id string) (*domain.Approval, error) {
+			if id == "just-approved" {
+				return nil, domain.ErrNotFound
+			}
+			return &domain.Approval{ID: "approval-2", RequestID: id, Status: domain.ApprovalStatusPending}, nil
+		},
+	}
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/requests/pending", nil)
+	r.AddCookie(auth.SessionCookie("cookie", true))
+	rr := httptest.NewRecorder()
+	NewRouter(d).ServeHTTP(rr, r)
+	if rr.Code != http.StatusOK || strings.Contains(rr.Body.String(), "just-approved") || !strings.Contains(rr.Body.String(), "still-pending") {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestRequestMutationsRequireSessionAndCSRFBeforeService(t *testing.T) {
 	paths := []struct{ method, path, body string }{
 		{http.MethodPost, "/api/v1/requests", `{"title":"T"}`},
@@ -294,6 +331,9 @@ func TestRequestServiceErrorsMapToDocumentedResponses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			d := requestTestDependencies()
 			d.RequestService = &requestServiceFake{
+				approval: func(context.Context, requests.Actor, string) (*domain.Approval, error) {
+					return &domain.Approval{ID: "approval-1", RequestID: "r", Status: domain.ApprovalStatusPending}, nil
+				},
 				update: func(context.Context, requests.Actor, string, int64, string, string) (domain.Request, error) {
 					return domain.Request{}, tc.err
 				},
@@ -359,6 +399,35 @@ func TestRequestOperationSuccessContracts(t *testing.T) {
 				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 			}
 		})
+	}
+}
+
+func TestApproveReturnsApprovedResponseWhenSubsequentReadsAreForbidden(t *testing.T) {
+	d := requestTestDependencies()
+	approved := false
+	result := domain.Request{ID: "r", OrganizationID: "server-org", Title: "T", Status: domain.RequestStatusPending, Version: 2, RequesterMemberID: "requester", CreatedAt: testNow, UpdatedAt: testNow}
+	d.RequestService = &requestServiceFake{
+		approval: func(_ context.Context, _ requests.Actor, _ string) (*domain.Approval, error) {
+			return nil, domain.ErrNotFound
+		},
+		approveWithApproval: func(_ context.Context, _ requests.Actor, _ string, _ int64) (domain.Request, *domain.Approval, error) {
+			approved = true
+			result.Status = domain.RequestStatusApproved
+			result.Version = 3
+			return result, &domain.Approval{ID: "approval-1", RequestID: "r", AssigneeMemberID: "selected-member", Status: domain.ApprovalStatusApproved}, nil
+		},
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/requests/r/approvals", strings.NewReader(`{"expectedVersion":2}`))
+	r.AddCookie(auth.SessionCookie("cookie", true))
+	r.Header.Set("Origin", allowedOrigin)
+	r.Header.Set("X-CSRF-Token", "token")
+	rr := httptest.NewRecorder()
+	NewRouter(d).ServeHTTP(rr, r)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"status":"approved"`) || !strings.Contains(rr.Body.String(), `"id":"approval-1"`) {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !approved {
+		t.Fatal("approval operation was not called")
 	}
 }
 

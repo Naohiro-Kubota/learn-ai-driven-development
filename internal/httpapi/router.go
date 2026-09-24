@@ -23,6 +23,7 @@ type RequestService interface {
 	UpdateDraft(context.Context, requests.Actor, string, int64, string, string) (domain.Request, error)
 	Submit(context.Context, requests.Actor, string, int64) (domain.Request, error)
 	Approve(context.Context, requests.Actor, string, int64) (domain.Request, error)
+	ApproveWithApproval(context.Context, requests.Actor, string, int64) (domain.Request, *domain.Approval, error)
 	Get(context.Context, requests.Actor, string) (domain.Request, error)
 	GetApproval(context.Context, requests.Actor, string) (*domain.Approval, error)
 	ListPending(context.Context, requests.Actor) ([]domain.Request, error)
