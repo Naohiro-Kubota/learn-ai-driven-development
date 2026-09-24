@@ -83,7 +83,14 @@ async function waitFor(
 	while (Date.now() < deadline) {
 		if (signal?.aborted) throw new Error("E2E stack interrupted");
 		for (const child of children) {
-			if (child.exited) throw new Error("E2E service exited before readiness");
+			if (child.exited) {
+				const reason = child.result?.signal
+					? `signal ${child.result.signal}`
+					: child.result?.code === undefined
+						? "spawn error"
+						: `code ${child.result.code}`;
+				throw new Error(`${child.label} exited before readiness (${reason})`);
+			}
 		}
 		try {
 			const response = await fetchResource(url, {
@@ -175,6 +182,9 @@ export async function runStack(deps = {}) {
 		APP_FRONTEND_ORIGIN: frontendOrigin,
 		APP_COOKIE_SECURE: "false",
 		AUTH_TRANSACTION_KEY: random(32).toString("base64"),
+		SESSION_IDLE_TTL: "15m",
+		SESSION_ABSOLUTE_TTL: "8h",
+		AUTH_TRANSACTION_TTL: "5m",
 		VITE_API_ORIGIN: apiOrigin,
 		E2E_TEST_PASSWORD: password,
 		GOTOOLCHAIN: "go1.27.1",
@@ -220,6 +230,7 @@ export async function runStack(deps = {}) {
 			stdio: "ignore",
 			detached: true,
 		});
+		api.label = "API";
 		await waitFor(
 			fetchResource,
 			`${apiOrigin}/api/v1/session`,
@@ -233,6 +244,7 @@ export async function runStack(deps = {}) {
 			["exec", "vite", "--host", "127.0.0.1", "--port", "5173", "--strictPort"],
 			{ env, stdio: "ignore", detached: true },
 		);
+		vite.label = "Vite";
 		await waitFor(
 			fetchResource,
 			frontendOrigin,

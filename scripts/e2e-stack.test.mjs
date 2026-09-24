@@ -97,6 +97,34 @@ test("uses a writable per-run Go cache and removes it after cleanup", async () =
 	assert.equal(existsSync(cache), false);
 });
 
+test("passes the API all required session and transaction durations", async () => {
+	const { deps, calls } = fakeDeps();
+	await runStack(deps);
+	const api = calls.find(
+		({ command, args }) => command === "go" && args[1] === "./cmd/api",
+	);
+	assert.equal(api.options.env.SESSION_IDLE_TTL, "15m");
+	assert.equal(api.options.env.SESSION_ABSOLUTE_TTL, "8h");
+	assert.equal(api.options.env.AUTH_TRANSACTION_TTL, "5m");
+});
+
+test("identifies the API and exit code without printing its stderr", async () => {
+	const { deps } = fakeDeps({ secret: "private-sentinel" });
+	const originalSpawn = deps.spawn;
+	deps.spawn = (command, args, options) => {
+		const child = originalSpawn(command, args, options);
+		if (command === "go" && args[1] === "./cmd/api") {
+			queueMicrotask(() => child.emit("exit", 1));
+		}
+		return child;
+	};
+	await assert.rejects(runStack(deps), (error) => {
+		assert.match(error.message, /API exited before readiness \(code 1\)/);
+		assert.doesNotMatch(error.message, /private-sentinel/);
+		return true;
+	});
+});
+
 test("stops a detached service group after its wrapper exits, escalating if descendants survive", async () => {
 	const { deps, calls } = fakeDeps();
 	const groups = new Set([4101]);
