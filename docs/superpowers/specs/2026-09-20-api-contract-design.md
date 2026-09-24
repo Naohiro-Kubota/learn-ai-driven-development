@@ -10,7 +10,7 @@ Reject、Cancel、複数Approval Step、通知、検索・絞り込み、ワー�
 
 - ADR-002: Go 1.22以降の`net/http`と`ServeMux`、JSON over HTTP、HTTP statusと機械可読なエラーコード
 - ADR-003: OpenAPI 3.1をHTTP API契約の正本とし、内部DB表現を公開しない
-- ADR-005、ADR-009、ADR-010、ADR-011: OIDC Authorization Code Flow with PKCE、Keycloak、server-side session、CSRF防御
+- ADR-005、ADR-009、ADR-010、ADR-011、ADR-013: OIDC Authorization Code Flow with PKCE、Keycloak、Memberに束縛したserver-side session、複数Organization所属時の選択、CSRF防御
 - ADR-008: resource APIは`/api/v1` URL prefixを使用する
 - PDR-001: Title/Description、Draftだけの更新、Submit後の不変性
 - PDR-002: Organization既定Approverへの単一Approval Step割当と自己承認禁止
@@ -22,7 +22,9 @@ OpenAPIのserver URLは`/`とする。OIDC browser handoffはresource APIでは�
 | Route | Purpose |
 | --- | --- |
 | `GET /auth/oidc/login` | OIDC認証transactionを開始し、Providerへ302 redirectする |
-| `GET /auth/oidc/callback` | callbackを検証してsessionを発行し、UIへ302 redirectする |
+| `GET /auth/oidc/callback` | callbackを検証する。対応するMemberが1件ならsessionを発行してFrontendの`/`へ、複数件なら選択transactionだけを発行して`/organization-selection`へ302 redirectする |
+| `GET /auth/oidc/organization-selection` | 選択transactionの候補Memberと新しいCSRF tokenを返す |
+| `POST /auth/oidc/organization-selection` | 候補Memberの選択を検証し、選択済みMemberのsessionを発行してFrontendの`/`へ302 redirectする |
 | `GET /api/v1/session` | 現在のActorとunsafe request用CSRF tokenを返す |
 | `POST /api/v1/session/logout` | sessionを失効してcookieを削除する |
 | `POST /api/v1/requests` | Draftを作成する |
@@ -41,6 +43,8 @@ OpenAPIのserver URLは`/`とする。OIDC browser handoffはresource APIでは�
 ## Authentication, authorization, and CSRF
 
 `/api/v1`はsession cookieで認証する。OpenAPIではproductionの`__Host-approval_flow_session` cookieを`sessionCookie`として表現する。unsafe methodには、`GET /api/v1/session`で取得したsession-bound CSRF tokenを`X-CSRF-Token` headerで送る。実装は許可originも照合する。
+
+複数所属のcallbackではapplication sessionを発行しない。選択画面は短命な選択transactionのcookieを使って候補と選択用CSRF tokenを取得する。選択POSTは許可origin、CSRF token、transaction内の候補Memberを検証し、成功時に選択済みMemberへ束縛したsessionを発行する。候補が0件または認証検証に失敗した場合もsessionを発行しない。
 
 OIDC token、PKCE verifier、role、Member IDはcookieやbrowser storageに置かない。認可とAudit EventのActorは、server-side sessionから得たMemberとアプリケーションDBのrole・割当で決定する。
 

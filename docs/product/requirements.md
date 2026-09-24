@@ -1,6 +1,6 @@
 # プロダクト要求
 
-Status: Initial baseline
+Status: Initial baseline（初回Sliceの提供範囲を2026-09-24時点で追記）
 
 この文書は、プロダクトが持つべき能力を定義します。
 重要な振る舞いまたはアーキテクチャへ影響する未決定事項は、実装前に Product Decision Record または ADR により解決してください。
@@ -12,7 +12,7 @@ Status: Initial baseline
 
 ### FR-002 ロールと認可
 システムは少なくとも管理者、申請者、承認者を扱えること。
-詳細な権限ルールは未決定。
+初回Sliceの権限ルールはADR-005で決定済み。追加の権限ルールは未決定。
 
 ### FR-003 申請ライフサイクル
 メンバーは申請をDraftとして作成し、承認依頼として提出できること。
@@ -52,6 +52,27 @@ Status: Initial baseline
 
 ### FR-013 Backend
 バックエンドアプリケーションコードはGoで記述すること。
+
+## 初回 Slice で決定・提供済み
+
+初回Sliceの対象範囲は以下のとおりです。API契約の正本は`api/openapi.yaml`、初回Sliceの判断根拠はAccepted状態のDecision Recordです。
+
+- FR-001、FR-002: OrganizationとMember、OIDC identityの複数Organization所属、選択済みMemberに対するサーバー側認可（ADR-005、ADR-013）。
+- FR-003、FR-004、FR-005: Title必須・Description任意のDraft作成と本人による編集・Submit、Organizationの既定Approverへ割り当てる単一Approval Step、割当先によるApprove（PDR-001、PDR-002）。Rejectは含まない。
+- FR-007、FR-011: Draft・Submit・Approveの監査履歴と、期待versionによる競合検出（PDR-001、ADR-002、ADR-004）。
+- FR-012、FR-013: TypeScript/ReactのWeb UIとGoのHTTP API。RequesterからApproverへの一連の操作をbrowser E2Eで検証済み（ADR-001、ADR-002、ADR-003、ADR-006）。
+
+## 今後の対象
+
+- FR-004: 複数Step、並列承認、定足数、代理承認、条件分岐。初回Sliceは単一Stepに限る。
+- FR-005: Reject、コメント、却下理由の扱い。RejectのProduct Decisionは未承認で、初回Sliceには含めない。
+- FR-006: Cancelと、キャンセルを許す状態・権限。
+- FR-008: 通知チャネルと通知処理方式。
+- FR-009: 関係する申請の検索・絞り込み。初回Sliceには割当済みPending一覧とRequest詳細の取得を提供する。
+- FR-010: 管理者によるワークフロー設定・管理。初回Sliceでは設定UIを提供しない。
+- FR-002: 初回Sliceで定めた範囲を超える権限ルール。
+
+これらの振る舞いを実装する前に、必要なProduct DecisionまたはADRを承認する。
 
 ## 非機能要求
 

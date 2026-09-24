@@ -1,8 +1,10 @@
 # 複数Organization対応OIDC Identity設計
 
-更新日: 2026-09-21  
-Status: Accepted design — implementation plan review pending
+更新日: 2026-09-24
+Status: Accepted design — ADR-013承認済み、Task 5・6実装済み、Frontendとbrowser E2E検証済み
 Related decision: `docs/decisions/architecture/ADR-013-oidc-identity-and-organization-membership.md`
+
+「実装境界と順序」は設計時点の作業計画を記録したものです。現在の実装・検証結果は[Task 6完了記録](../../development/task6-completion-2026-09-22.md)と[Frontend Task 4完了記録](../../development/frontend-completion-2026-09-24.md)を参照してください。
 
 ## 目的と成功条件
 
@@ -41,7 +43,7 @@ Related decision: `docs/decisions/architecture/ADR-013-oidc-identity-and-organiz
 - Organization選択transactionも一度の成功・失敗試行で再利用不能にする。
 - token、PKCE verifier、cookie生値、CSRF token、identity subjectはJSON responseまたはlogへ含めない。
 
-## 実装境界と順序
+## 実装境界と順序（設計時点の計画）
 
 1. 承認後、ADR-013をAcceptedにし、Task 5 hand-offと実装計画を更新する。
 2. schema migrationとPostgreSQL repositoryを追加し、identity対応、選択transaction、`created_at`を実PostgreSQLでテストする。
