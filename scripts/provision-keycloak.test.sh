@@ -178,7 +178,7 @@ done
 
 failed_config_path=''
 failed_cleanup_args=''
-failed_credentials_stdin=''
+failed_credentials_count=0
 for args_file in "$failed_log"/*.args; do
   stdin_file="${args_file%.args}.stdin"
   if grep -Fq -- '--config' "$args_file"; then
@@ -197,8 +197,7 @@ for args_file in "$failed_log"/*.args; do
     done <"$args_file"
   fi
   if grep -Fq 'config' "$args_file" && grep -Fq 'credentials' "$args_file"; then
-    [[ -z "$failed_credentials_stdin" ]]
-    failed_credentials_stdin="$stdin_file"
+    failed_credentials_count=$((failed_credentials_count + 1))
     cmp -s <(printf '%s\n' "$admin_password") "$stdin_file"
   elif grep -Fq "$admin_password" "$stdin_file" || grep -Fq "$user_password" "$stdin_file"; then
     echo "password captured on stdin for an unexpected failure invocation" >&2
@@ -208,7 +207,7 @@ for args_file in "$failed_log"/*.args; do
     failed_cleanup_args="$args_file"
   fi
 done
-[[ -n "$failed_credentials_stdin" ]]
+[[ "$failed_credentials_count" -eq 10 ]]
 [[ "$(<"$failed_log/credentials-attempts")" -eq 10 ]]
 [[ "$failed_config_path" == /tmp/kcadm-config-* ]]
 [[ -n "$failed_cleanup_args" ]]
