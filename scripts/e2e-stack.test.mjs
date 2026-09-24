@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { runStack } from "./e2e-stack.mjs";
 
@@ -95,6 +97,37 @@ test("uses a writable per-run Go cache and removes it after cleanup", async () =
 		.GOCACHE;
 	assert.match(cache, /approval-flow-e2e-go-cache-/);
 	assert.equal(existsSync(cache), false);
+});
+
+test("removes only its per-run Playwright artifacts on success and failure", async () => {
+	const outputDirs = [];
+	for (const playwrightExit of [0, 1]) {
+		const { deps } = fakeDeps({ playwrightExit });
+		const originalSpawn = deps.spawn;
+		deps.spawn = (command, args, options) => {
+			if (args.includes("playwright")) {
+				const outputDir = options.env.E2E_PLAYWRIGHT_OUTPUT_DIR;
+				outputDirs.push(outputDir);
+				if (outputDir) {
+					assert.equal(existsSync(outputDir), true);
+					mkdirSync(join(outputDir, "case"));
+					writeFileSync(
+						join(outputDir, "case", "error-context.md"),
+						"private-sentinel",
+					);
+				}
+			}
+			return originalSpawn(command, args, options);
+		};
+		if (playwrightExit) await assert.rejects(runStack(deps), /Playwright/);
+		else await runStack(deps);
+	}
+	assert.equal(new Set(outputDirs).size, 2);
+	for (const outputDir of outputDirs) {
+		assert.match(outputDir, /^\/.*approval-flow-e2e-playwright-/);
+		assert.equal(outputDir.startsWith(tmpdir()), true);
+		assert.equal(existsSync(outputDir), false);
+	}
 });
 
 test("passes the API all required session and transaction durations", async () => {
