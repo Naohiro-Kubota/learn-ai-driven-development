@@ -171,3 +171,53 @@ func TestLoadAllowsComposeNetworkOnlyInExplicitDevelopmentMode(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadValidatesOptInOTLPEndpointAndTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name, endpoint, timeout string
+		valid                   bool
+	}{
+		{"disabled", "", "", true},
+		{"http", "http://127.0.0.1:4318", "2s", true},
+		{"https", "https://collector.example.test:4318", "", true},
+		{"credentials in URL", "https://user:secret@collector.example.test", "", false},
+		{"path", "https://collector.example.test/hidden", "", false},
+		{"query", "https://collector.example.test?key=secret", "", false},
+		{"unsupported transport", "grpc://collector.example.test", "", false},
+		{"timeout without endpoint", "", "2s", false},
+		{"unbounded timeout", "http://127.0.0.1:4318", "30s", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			values := testEnvironment()
+			values["APP_OTLP_ENDPOINT"] = tc.endpoint
+			values["APP_OTLP_TIMEOUT"] = tc.timeout
+			cfg, err := Load(func(key string) string { return values[key] })
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v cfg=%+v err=%v", tc.valid, cfg, err)
+			}
+			if tc.valid && tc.endpoint != "" && (cfg.OTLPEndpoint != tc.endpoint || cfg.OTLPTimeout <= 0) {
+				t.Fatalf("invalid exporter config: %+v", cfg)
+			}
+		})
+	}
+}
+
+func TestLoadValidatesTraceSampleRatio(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		valid bool
+	}{
+		{"", true}, {"0", true}, {"0.25", true}, {"1", true},
+		{"-0.1", false}, {"1.1", false}, {"NaN", false}, {"secret", false},
+	} {
+		values := testEnvironment()
+		values["APP_TRACE_SAMPLE_RATIO"] = tc.value
+		cfg, err := Load(func(key string) string { return values[key] })
+		if (err == nil) != tc.valid {
+			t.Fatalf("ratio=%q valid=%v cfg=%+v err=%v", tc.value, tc.valid, cfg, err)
+		}
+		if tc.valid && (cfg.TraceSampleRatio < 0 || cfg.TraceSampleRatio > 1) {
+			t.Fatalf("invalid accepted ratio %v", cfg.TraceSampleRatio)
+		}
+	}
+}

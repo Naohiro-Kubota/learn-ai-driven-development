@@ -92,6 +92,8 @@ Status: Initial baseline（初回Sliceの提供範囲を2026-09-24時点で追�
 ### NFR-005 Observability
 該当する仕組みを導入した後は、失敗したリクエストやバックグラウンド処理を診断できる運用シグナルを提供すること。
 
+HTTP APIの運用シグナル方式はAccepted [ADR-019](../decisions/architecture/ADR-019-observability-signal-architecture.md)で決定した。バックグラウンド処理は未導入であり、導入時に同ADRの相関・失敗分類規約を適用する。
+
 ### NFR-006 ローカル開発
 最終的に、新しい開発者が文書化されたコマンドでアプリケーションと必要サービスをローカル起動できること。
 
@@ -113,7 +115,7 @@ Status: Initial baseline（初回Sliceの提供範囲を2026-09-24時点で追�
 - 非同期処理方式
 - 通知チャネル
 - デプロイ先
-- Observabilityスタック
+- Observabilityの収集先・保存先、保持期間、ダッシュボード、アラート（アプリケーション側の信号方式はADR-019で決定済み）
 - テストフレームワークおよびテストピラミッド詳細
 
 これらを適切なDecision Recordなしで決定すると、今回の実験目的を損ないます。
