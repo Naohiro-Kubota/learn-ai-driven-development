@@ -10,9 +10,9 @@ else
   exit 1
 fi
 grep -Fq 'kcadm_config="/tmp/kcadm-config-$$"' "$script"
-grep -Fq '"${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh --config "$kcadm_config"' "$script"
-grep -Fq 'printf '\''%s\n'\'' "$KEYCLOAK_ADMIN_PASSWORD" | kcadm config credentials' "$script"
-grep -Fq 'printf '\''%s\n'\'' "$TEST_USER_PASSWORD" | kcadm set-password' "$script"
+grep -Fq '"${compose[@]}" exec -T keycloak /opt/keycloak/bin/kcadm.sh "$@" --config "$kcadm_config"' "$script"
+grep -Fq 'printf '\''%s\n'\'' "$KEYCLOAK_ADMIN_PASSWORD" | kcadm_secret config credentials' "$script"
+grep -Fq 'printf '\''%s\n'\'' "$TEST_USER_PASSWORD" | kcadm_secret set-password' "$script"
 grep -Fq 'trap cleanup EXIT' "$script"
 grep -Fq 'rm -f "$kcadm_config"' "$script"
 grep -Fq 'http://127.0.0.1:8081/realms/approval-flow-dev' "$script"
@@ -60,9 +60,23 @@ cat >"$FAKE_DOCKER_LOG/$index.stdin"
       exit 42
     fi
     ;;
-  *' get users '*) ;;
+  *' get users '*)
+    case " $* " in
+      *' username=requester '*)
+        if [[ "${FAKE_DOCKER_BAD_SUBJECT:-false}" == true ]]; then
+          printf '%s\n' 'invalid-subject'
+        else
+          printf '%s\n' '11111111-1111-4111-8111-111111111111'
+        fi
+        ;;
+      *' username=approver '*) printf '%s\n' '22222222-2222-4222-8222-222222222222' ;;
+      *' username=admin '*) printf '%s\n' '33333333-3333-4333-8333-333333333333' ;;
+    esac
+    ;;
   *' create users '*) ;;
+  *' update users/'*) ;;
   *' set-password '*) ;;
+  *' postgres psql '*) ;;
   *' rm -f '*) ;;
   *)
     echo "unexpected fake docker invocation" >&2
@@ -74,14 +88,19 @@ chmod +x "$fake_root/docker"
 
 admin_password='admin-password-for-test-only'
 user_password='user-password-for-test-only'
-PATH="$fake_root:$PATH" \
+if ! PATH="$fake_root:$PATH" \
 FAKE_DOCKER_LOG="$fake_log" \
 KEYCLOAK_ADMIN_USERNAME='admin' \
 KEYCLOAK_ADMIN_PASSWORD="$admin_password" \
 TEST_USER_PASSWORD="$user_password" \
+LOCAL_DB_PASSWORD='test-db-password' \
+AUTH_TRANSACTION_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' \
 KEYCLOAK_READINESS_RETRY_DELAY_SECONDS=0 \
 FAKE_DOCKER_TRANSIENT_CREDENTIAL_FAILURES=2 \
-bash "$script" >"$fake_root/output" 2>"$fake_root/error"
+bash "$script" >"$fake_root/output" 2>"$fake_root/error"; then
+  cat "$fake_root/error" >&2
+  exit 1
+fi
 
 if grep -Fq "$admin_password" "$fake_root/output" "$fake_root/error" "$fake_log"/*.args; then
   echo "administrator password leaked to output or arguments" >&2
@@ -134,6 +153,43 @@ done
 [[ "$config_path" == /tmp/kcadm-config-* ]]
 [[ "$set_password_count" -eq 3 ]]
 
+psql_count=0
+for args_file in "$fake_log"/*.args; do
+  if grep -Fq 'psql' "$args_file"; then
+    psql_count=$((psql_count + 1))
+    sql_file="${args_file%.args}.stdin"
+    grep -Fq 'ON CONFLICT' "$sql_file"
+    grep -Fq 'default_approver_member_id' "$sql_file"
+  fi
+done
+[[ "$psql_count" -eq 1 ]]
+
+PATH="$fake_root:$PATH" FAKE_DOCKER_LOG="$fake_log" \
+  KEYCLOAK_ADMIN_USERNAME='admin' KEYCLOAK_ADMIN_PASSWORD="$admin_password" \
+  TEST_USER_PASSWORD="$user_password" LOCAL_DB_PASSWORD='test-db-password' \
+  AUTH_TRANSACTION_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' \
+  KEYCLOAK_READINESS_RETRY_DELAY_SECONDS=0 bash "$script" >"$fake_root/repeat-output" 2>"$fake_root/repeat-error"
+psql_count=0
+for args_file in "$fake_log"/*.args; do
+  if grep -Fq 'psql' "$args_file"; then psql_count=$((psql_count + 1)); fi
+done
+[[ "$psql_count" -eq 2 ]]
+
+bad_log="$fake_root/bad-log"
+mkdir -p "$bad_log"
+if PATH="$fake_root:$PATH" FAKE_DOCKER_LOG="$bad_log" FAKE_DOCKER_BAD_SUBJECT=true \
+  KEYCLOAK_ADMIN_USERNAME='admin' KEYCLOAK_ADMIN_PASSWORD="$admin_password" \
+  TEST_USER_PASSWORD="$user_password" LOCAL_DB_PASSWORD='test-db-password' \
+  AUTH_TRANSACTION_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' \
+  KEYCLOAK_READINESS_RETRY_DELAY_SECONDS=0 bash "$script" >"$fake_root/bad-output" 2>"$fake_root/bad-error"; then
+  echo "provisioning accepted invalid subject" >&2
+  exit 1
+fi
+grep -Fq 'Invalid Keycloak subject' "$fake_root/bad-error"
+for args_file in "$bad_log"/*.args; do
+  if grep -Fq 'psql' "$args_file"; then echo "database was seeded for invalid subject" >&2; exit 1; fi
+done
+
 cleanup_args=''
 for args_file in "$fake_log"/*.args; do
   if grep -Fq 'rm' "$args_file" && grep -Fq -- '-f' "$args_file"; then
@@ -156,6 +212,8 @@ if PATH="$fake_root:$PATH" \
   KEYCLOAK_ADMIN_USERNAME='admin' \
   KEYCLOAK_ADMIN_PASSWORD="$admin_password" \
   TEST_USER_PASSWORD="$user_password" \
+  LOCAL_DB_PASSWORD='test-db-password' \
+  AUTH_TRANSACTION_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' \
   bash "$script" >"$failed_stdout" 2>"$failed_stderr"; then
   echo "provisioning unexpectedly succeeded after fake docker failure" >&2
   exit 1

@@ -1,29 +1,17 @@
 # Frontend local development and browser E2E
 
-Run commands from the repository root. The supported versions are Node.js `26.9.0`, pnpm `12.5.1`, Go `1.27.1`, PostgreSQL `17.11`, and Keycloak `26.7.4` with the pinned image digest in [toolchain.md](toolchain.md). Docker with Compose and a Chromium browser installed by Playwright are required for the browser test. Install the locked packages and browser once:
+Run commands from the repository root. The supported versions are Node.js `26.9.0`, pnpm `12.5.1`, Go `1.27.1`, PostgreSQL `17.11`, and Keycloak `26.7.4` with the pinned image digest in [toolchain.md](toolchain.md). Docker with Compose and a Chromium browser installed by Playwright are required for the browser test. For repository tests, install the locked packages and browser once:
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm exec playwright install chromium
 ```
 
-## Manual development
+## Local Compose development
 
-Follow [Local API](local-api.md) to create a **separate development database**, apply migrations, provision the local Keycloak realm and users, and map their verified `(iss, sub)` identities to application Members and roles. A Keycloak user alone has no application authorization. The app DB mapping and same-Organization default Approver are required for the Requester → Approver flow. Do not use the temporary test database as the development database.
+Follow [Local API](local-api.md) to supply local credentials, run `docker compose -f compose.local.yaml up --build -d`, and provision the Keycloak users and application memberships with `bash scripts/provision-keycloak.sh`. The Compose stack starts Vite, the Go API, PostgreSQL, and Keycloak; the migration job completes before the API starts. Open `http://127.0.0.1:5173` after provisioning. Stop it with `docker compose -f compose.local.yaml down` to preserve the development database volume.
 
-The example settings are listed in [`.env.example`](../../.env.example). That file is a checklist, not a source of credentials or an automatically loaded Go configuration. Supply `DATABASE_URL`, `OIDC_CLIENT_ID`, and a fresh standard-base64 `AUTH_TRANSACTION_KEY` encoding exactly 32 random bytes in the API process environment. Keep all secrets out of the repository and shell history. Start the migrated API as described in [Local API](local-api.md):
-
-```sh
-(cd backend && GOTOOLCHAIN=go1.27.1 go run ./cmd/api)
-```
-
-In another terminal, start Vite:
-
-```sh
-VITE_API_ORIGIN=http://127.0.0.1:8080 pnpm run dev --host 127.0.0.1
-```
-
-Open `http://127.0.0.1:5173`. The API is `http://127.0.0.1:8080`; Keycloak issuer is `http://127.0.0.1:8081/realms/approval-flow-dev`. These are separate origins on the same loopback site. `APP_FRONTEND_ORIGIN` must be the Vite origin, and `VITE_API_ORIGIN` must be the API origin. Keycloak's OIDC callback is `http://127.0.0.1:8080/auth/oidc/callback`; successful login and Organization selection return to the Frontend origin. The development-only HTTP cookie setting requires `APP_ENV=development` and loopback addresses. Stop Vite and the API with `Ctrl-C`, then stop only the Keycloak stack started for manual development using `docker compose -f compose.local.yaml down`.
+The Frontend origin is `http://127.0.0.1:5173`, the API origin is `http://127.0.0.1:8080`, and the Keycloak issuer is `http://127.0.0.1:8081/realms/approval-flow-dev`. These URLs match the realm callback, cookie, and CORS configuration in ADR-015. The test user's Keycloak identity must be mapped to an application Member and role before login succeeds; the provisioning command performs this mapping. No production credentials or data belong in this stack.
 
 ## Isolated browser E2E
 

@@ -2,7 +2,7 @@
 
 Status: Accepted ADR configuration
 
-この文書は、Accepted ADR-001、ADR-002、ADR-004、ADR-006、ADR-007、ADR-009、ADR-010、ADR-012、ADR-015、ADR-017に基づく初回Sliceの再現可能なtoolchain基準です。versionは2026-09-21時点の最新安定版として固定します。更新は依存関係ポリシーとADR-007のレビュー手順に従って行います。
+この文書は、Accepted ADR-001、ADR-002、ADR-004、ADR-006、ADR-007、ADR-009、ADR-010、ADR-012、ADR-015、ADR-017、ADR-018に基づく初回Sliceの再現可能なtoolchain基準です。versionは2026-09-21時点の最新安定版として固定します。更新は依存関係ポリシーとADR-007のレビュー手順に従って行います。
 
 ## Toolchain
 
@@ -70,7 +70,7 @@ pnpm run lint
 pnpm run build
 ```
 
-画面は session bootstrap、Sign in、Organization 選択、Draft 作成・編集、Submit、割当済み Pending 一覧、Approve、Request と Audit の確認、logout と明示的なエラー回復を提供する。手動起動の API・Keycloak・DB の準備は [`frontend-local-development.md`](frontend-local-development.md) と [`local-api.md`](local-api.md) を参照する。
+画面は session bootstrap、Sign in、Organization 選択、Draft 作成・編集、Submit、割当済み Pending 一覧、Approve、Request と Audit の確認、logout と明示的なエラー回復を提供する。現在のローカルCompose起動手順は [`frontend-local-development.md`](frontend-local-development.md) と [`local-api.md`](local-api.md) を参照する。
 
 Browser E2E の entrypoint は `pnpm run test:e2e`。これは `compose.e2e.yaml` の専用 PostgreSQL/Keycloak と Go API、Vite、Playwright を起動し、その実行が作成した資源だけを終了時に削除する。`pnpm run test:e2e:runner` は runner の unit test。固定 loopback port `8080`、`8081`、`5173`、`55432` を使用するので、`pnpm run test:db` や手動開発 stack と同時に実行しない。Playwright Chromium を初回に `pnpm exec playwright install chromium` で導入する。
 

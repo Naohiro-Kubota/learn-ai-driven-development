@@ -61,7 +61,7 @@ func run(args []string, lookup func(string) string, output io.Writer) error {
 	if command != "up" && command != "down" && command != "version" {
 		return errors.New("unknown migration command")
 	}
-	if err := validateLocalDatabaseURL(*databaseURL); err != nil {
+	if err := validateLocalDatabaseURL(*databaseURL, lookup("APP_ENV") == "development" && lookup("APP_LOCAL_COMPOSE") == "true"); err != nil {
 		return err
 	}
 
@@ -93,13 +93,13 @@ func run(args []string, lookup func(string) string, output io.Writer) error {
 	return nil
 }
 
-func validateLocalDatabaseURL(raw string) error {
+func validateLocalDatabaseURL(raw string, composeMode bool) error {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" || parsed.Host == "" || parsed.Opaque != "" || parsed.Fragment != "" {
 		return errors.New("DATABASE_URL must be a local PostgreSQL URL")
 	}
 	host := parsed.Hostname()
-	if host == "" || host != "localhost" && !net.ParseIP(host).IsLoopback() {
+	if host == "" || host != "localhost" && !net.ParseIP(host).IsLoopback() && !(composeMode && host == "postgres") {
 		return errors.New("DATABASE_URL must target a loopback host")
 	}
 	if parsed.Port() == "" && strings.Contains(parsed.Host, ":") && net.ParseIP(host) == nil {

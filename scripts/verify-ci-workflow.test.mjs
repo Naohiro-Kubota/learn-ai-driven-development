@@ -42,7 +42,7 @@ test("CI runs every required check and isolates database and browser jobs", () =
 		"pnpm run lint",
 		"pnpm run typecheck",
 		"pnpm test",
-		"node --test scripts/verify-openapi.test.mjs scripts/test-postgres.test.mjs scripts/verify-ci-workflow.test.mjs scripts/e2e-seed.test.mjs",
+		"node --test scripts/verify-openapi.test.mjs scripts/test-postgres.test.mjs scripts/verify-ci-workflow.test.mjs scripts/e2e-seed.test.mjs scripts/local-compose.test.mjs",
 		"pnpm run test:e2e:runner",
 		"bash -n scripts/provision-keycloak.sh scripts/provision-keycloak.test.sh",
 		"bash scripts/provision-keycloak.test.sh",

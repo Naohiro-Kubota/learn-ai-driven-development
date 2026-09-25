@@ -237,3 +237,28 @@ func TestRunDoesNotExposeMigrationErrorDetails(t *testing.T) {
 		t.Fatalf("error exposes credentials: %v", err)
 	}
 }
+
+func TestRunAllowsOnlyComposePostgresInExplicitDevelopmentMode(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode, env, host string
+		allowed               bool
+	}{
+		{"compose", "true", "development", "postgres", true},
+		{"production", "true", "production", "postgres", false},
+		{"missing mode", "", "development", "postgres", false},
+		{"other host", "true", "development", "remote", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			original := newMigration
+			newMigration = func(_, _ string) (migrationRunner, error) { called = true; return &fakeMigration{}, nil }
+			t.Cleanup(func() { newMigration = original })
+			err := run(nil, func(key string) string {
+				return map[string]string{"DATABASE_URL": "postgres://user:secret@" + tc.host + ":5432/db", "APP_LOCAL_COMPOSE": tc.mode, "APP_ENV": tc.env}[key]
+			}, io.Discard)
+			if tc.allowed != (err == nil && called) {
+				t.Fatalf("err=%v called=%v", err, called)
+			}
+		})
+	}
+}

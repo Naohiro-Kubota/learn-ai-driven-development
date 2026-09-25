@@ -1,216 +1,66 @@
-# Local API
+# Local API and Compose development stack
 
-This document describes a safe local run of the Go API. It is for loopback-only
-development and test databases. Do not use a production database, production
-OIDC issuer, or real credentials in a shell history, this repository, or a
-shared environment.
+The local stack follows Accepted [ADR-018](../decisions/architecture/ADR-018-local-compose-application-stack.md). It starts the React Frontend, Go Backend, PostgreSQL 17.11, and Keycloak 26.7.4 with Docker Compose. All published ports bind to host `127.0.0.1`. Use only development credentials and data.
 
-## 1. Fixed toolchain and install
+## Start
 
-Run from the repository root. Use these exact versions:
-
-- Node.js `26.9.0` (`.node-version`)
-- pnpm `12.5.1` (`package.json`)
-- Go `1.27.1` (`.go-version` and `backend/go.mod`)
-- PostgreSQL `17.11` for the repository's test container
-- Keycloak `26.7.4` with the pinned image digest in
-  [`docs/development/toolchain.md`](toolchain.md)
-
-Confirm the active versions before continuing:
+Run from the repository root. Docker with Compose is required; host Go, Node.js, and pnpm are not needed to start the application containers. On the first start, create local credentials and keep them in a private password manager. On later starts with the preserved volumes, reuse the same `LOCAL_DB_PASSWORD` and Keycloak bootstrap admin credentials. Enter passwords at the prompts so they do not enter shell history:
 
 ```sh
-node --version
-pnpm --version
-go version
-```
-
-Install exactly from the lockfile. Do not run an unfrozen install or modify the
-lockfile as part of a local API run:
-
-```sh
-pnpm install --frozen-lockfile
-```
-
-## 2. Verify the isolated test database
-
-The repository-provided database script is the supported integration-test
-entrypoint:
-
-```sh
-GOCACHE=/private/tmp/learn-ai-go-cache pnpm run test:db
-```
-
-`scripts/test-postgres.mjs` starts the test-only PostgreSQL 17.11 container on
-loopback `127.0.0.1:55432`, injects the isolated
-`TEST_DATABASE_URL` into the Go PostgreSQL tests, and runs the tests with
-`GOTOOLCHAIN=go1.27.1`. The script generates a disposable database password
-for each run. The tests apply the checked-in migrations from
-`backend/migrations/` in version order. The script always runs `docker compose -f
-compose.test.yaml down -v --remove-orphans` afterward, including after a failure.
-
-This test database is not the API's development database. Do not point
-`DATABASE_URL` at it while the script is running or reuse it after the script
-has cleaned it up.
-
-## 3. Prepare separate databases and migrations
-
-Create or select a separate local development database and a separate local
-test database. Both must be reachable only from the local machine. Never copy
-production data into either database.
-
-The API does not run migrations at startup. Apply the checked-in migrations to
-the separate development database with the repository's explicit local CLI:
-
-```sh
-export DATABASE_URL='<separate local development database URL>'
-(cd backend && GOTOOLCHAIN=go1.27.1 go run ./cmd/migrate-local up)
-```
-
-`up` is the default when the command is omitted. The CLI also accepts
-`-database-url '<local URL>'`, and supports `down` and `version`; it never
-prints the URL. Do not use it with a production database. Do not edit the
-schema manually or run migrations by starting `backend/cmd/api`.
-
-For automated migration and PostgreSQL verification, use only:
-
-```sh
-GOCACHE=/private/tmp/learn-ai-go-cache pnpm run test:db
-```
-
-That command is intentionally destructive to its temporary test database and
-does not migrate the separate development database.
-
-## 4. Start and provision loopback-only Keycloak
-
-The checked-in compose file uses Keycloak `26.7.4` with the exact digest in
-[`docs/development/toolchain.md`](toolchain.md), `start-dev`, the imported
-`keycloak/realms/approval-flow-dev-realm.json`, and only
-`127.0.0.1:8081`. It contains no database service and is for local development
-only. Supply all credentials externally and keep them out of shell history and
-the repository:
-
-```sh
-export KEYCLOAK_ADMIN_USERNAME='<local bootstrap admin username>'
-read -r -s KEYCLOAK_ADMIN_PASSWORD
+export KEYCLOAK_ADMIN_USERNAME=local_admin
+printf 'Keycloak admin password: '; read -r -s KEYCLOAK_ADMIN_PASSWORD; printf '\n'
 export KEYCLOAK_ADMIN_PASSWORD
-read -r -s TEST_USER_PASSWORD
+printf 'Development database password (URL-safe): '; read -r -s LOCAL_DB_PASSWORD; printf '\n'
+export LOCAL_DB_PASSWORD
+printf 'Local test user password: '; read -r -s TEST_USER_PASSWORD; printf '\n'
 export TEST_USER_PASSWORD
-docker compose -f compose.local.yaml up -d
+export AUTH_TRANSACTION_KEY="$(openssl rand -base64 32 | tr -d '\n')"
+docker compose -f compose.local.yaml up --build -d
 bash scripts/provision-keycloak.sh
 ```
 
-After Keycloak starts, the provisioning script waits for the first admin
-authentication to succeed, retrying a bounded number of times before it
-provisions users. It logs in with `kcadm`, creates or updates the development
-`requester`, `approver`, and `admin` users, and prints only the issuer and
-public client values. It passes passwords through stdin where supported. Do
-not expose Keycloak on `0.0.0.0` or a network interface shared with other
-users. Stop it with `docker compose -f compose.local.yaml down` when finished.
+Use a URL-safe value for `LOCAL_DB_PASSWORD`, such as hex generated with `openssl rand -hex 24`; Compose passes it into the PostgreSQL URL. PostgreSQL and Keycloak initialize their stored credentials only when their volumes are first created. Changing these values in the shell does not rotate credentials in existing volumes. To start with newly generated credentials, explicitly reset the local volumes as described below. `AUTH_TRANSACTION_KEY` must decode to exactly 32 bytes. Supply all four secret values externally; do not commit a populated `.env` file or reuse production credentials. The compose startup waits for the database, applies the checked-in migrations in a separate one-shot job, and starts the API after required services are ready. The provisioning command creates or updates the development Keycloak users and application authorization data. It is safe to rerun after a restart. Keycloak realm import by itself does not grant application roles.
 
-Keycloak users and client configuration do not provision application
-authorization. Before testing a login, explicitly provision the application
-database: create the local Organization and Members, add the required
-Requester/Approver/Admin roles, map each Keycloak `iss` + `sub` to its Member
-in `oidc_identities`/`member_oidc_identities`, and set the same-Organization
-default Approver where required. This DB mapping is a prerequisite for an
-authenticated API session; Keycloak realm roles are not an authorization
-source. Keep this data in a separate local database and do not commit identity
-or password values.
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The API is at `http://127.0.0.1:8080`, and the public OIDC issuer is `http://127.0.0.1:8081/realms/approval-flow-dev`. The Frontend and API are different origins on the same loopback site, as required by ADR-015. The API's internal Keycloak dial address is only for container-to-container traffic; discovery and ID token issuer validation retain the public issuer.
 
-## 5. Configure and start the API
-
-Export the following values in the process environment. Use a separate local
-development database URL for `DATABASE_URL`; do not record its password here.
-All URLs below are examples of loopback addresses and must match the local
-Keycloak realm/client configuration.
+Check service state and the unauthenticated API response:
 
 ```sh
-export APP_ENV=development
-export APP_LISTEN_ADDR=127.0.0.1:8080
-export APP_FRONTEND_ORIGIN=http://127.0.0.1:5173
-export APP_COOKIE_SECURE=false
-export DATABASE_URL='<separate local development database URL>'
-export OIDC_ISSUER='http://127.0.0.1:8081/realms/approval-flow-dev'
-export OIDC_CLIENT_ID='<local-client-id>'
-export OIDC_REDIRECT_URI='http://127.0.0.1:8080/auth/oidc/callback'
-export AUTH_TRANSACTION_KEY='<base64 encoding of exactly 32 random bytes>'
-export SESSION_IDLE_TTL='15m'
-export SESSION_ABSOLUTE_TTL='8h'
-export AUTH_TRANSACTION_TTL='5m'
+docker compose -f compose.local.yaml ps
+curl -i http://127.0.0.1:8080/api/v1/session
 ```
 
-`AUTH_TRANSACTION_KEY` must decode as standard base64 to exactly 32 bytes. Use
-a newly generated local-only value supplied by the environment; never use a
-sample value or a production key. Every `SESSION_*` and
-`AUTH_TRANSACTION_TTL` value must be a positive Go duration. The local
-configuration deliberately permits insecure cookies only when `APP_ENV` is
-`development`, the API listens on loopback, and `APP_FRONTEND_ORIGIN` is a
-loopback URL. Use `APP_COOKIE_SECURE=true` when testing through HTTPS.
+An unauthenticated `GET /api/v1/session` should return `401`. To inspect a startup failure, run `docker compose -f compose.local.yaml logs --tail=100` and inspect the migration, Keycloak, and Backend services. Do not paste logs containing local credentials into a shared issue.
 
-After the separate development database has been migrated and Keycloak is
-ready, start the API:
+## Stop or reset
 
 ```sh
-(cd backend && GOTOOLCHAIN=go1.27.1 go run ./cmd/api)
+docker compose -f compose.local.yaml down
 ```
 
-The API listens on `127.0.0.1:8080`. Every implemented method/path in the
-authoritative [`api/openapi.yaml`](../../api/openapi.yaml) contract is:
+This stops only the local Compose project and preserves its development PostgreSQL and Keycloak volumes. Reuse the original database password and Keycloak admin credentials when starting it again. To discard **all local stack database data** deliberately, use `docker compose -f compose.local.yaml down -v`; run it only after confirming you want that reset. Close the shell or unset the exported secrets after use.
 
-- `GET /auth/oidc/login`
-- `GET /auth/oidc/callback`
-- `GET /auth/oidc/organization-selection`
-- `POST /auth/oidc/organization-selection`
-- `GET /api/v1/session`
-- `POST /api/v1/session/logout`
-- `POST /api/v1/requests`
-- `GET /api/v1/requests/pending`
-- `GET /api/v1/requests/{requestId}`
-- `PATCH /api/v1/requests/{requestId}`
-- `POST /api/v1/requests/{requestId}/submit`
-- `POST /api/v1/requests/{requestId}/approvals`
-- `GET /api/v1/requests/{requestId}/audit-events`
+The isolated `compose.test.yaml` database and `compose.e2e.yaml` browser stack use different Compose projects and data. Do not run them alongside this stack when they need the same loopback ports. Never point the local stack at a test or production database.
 
-## 6. Verification
+## API contract and verification
 
-Run these checks from another terminal while keeping the API terminal
-available. OpenAPI validation and the following Go packages do not require a
-live PostgreSQL database or Keycloak:
+The implemented API paths are listed in [OpenAPI](../../api/openapi.yaml). The local browser flow uses `/auth/oidc/login` and `/auth/oidc/callback`, the session endpoints under `/api/v1/session`, and the request and approval endpoints under `/api/v1/requests`. Authenticated writes require the server-side session, permitted Frontend Origin, and CSRF token.
+
+For repository checks, install the pinned host toolchain described in [toolchain.md](toolchain.md) and run:
 
 ```sh
+pnpm install --frozen-lockfile
+pnpm run check
+pnpm test
 pnpm run verify:openapi
-node --test scripts/verify-openapi.test.mjs
-(cd backend && GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/config ./internal/auth ./internal/httpapi ./cmd/api ./cmd/migrate-local -count=1)
-(cd backend && GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go vet ./...)
+(cd backend && GOTOOLCHAIN=go1.27.1 go test ./internal/config ./internal/auth ./internal/httpapi ./cmd/api ./cmd/migrate-local -count=1)
+(cd backend && GOTOOLCHAIN=go1.27.1 go vet ./...)
 ```
 
-Run the PostgreSQL integration suite separately with its isolated harness:
+The PostgreSQL integration harness uses its own disposable database and tears it down after the run:
 
 ```sh
 GOCACHE=/private/tmp/learn-ai-go-cache pnpm run test:db
 ```
 
-The integration command supplies `TEST_DATABASE_URL` itself and applies and
-removes migrations in the temporary test database. Do not set
-`TEST_DATABASE_URL` to the development or production database.
-
-## 7. Cleanup
-
-Stop the API with `Ctrl-C`. Stop and remove only the local Keycloak container
-and its local-only data using the same compose/container command that started
-it. Do not remove unrelated containers or volumes.
-
-The test harness cleans its own PostgreSQL container and volume. If it was
-interrupted before its `finally` cleanup ran, inspect the exact compose project
-first, then run:
-
-```sh
-TEST_DB_PASSWORD=cleanup-only docker compose -f compose.test.yaml down -v --remove-orphans
-```
-
-`cleanup-only` is a nonsecret placeholder required to parse `compose.test.yaml`
-during `down`; it does not recover or reuse the generated test password.
-
-Unset the exported API variables or close the terminal. Keep local credentials
-and generated keys outside the repository, and verify that no secret-bearing
-files were created before sharing changes.
+Run the browser E2E separately with `pnpm run test:e2e`, after stopping the local stack. Its runner creates and removes its own PostgreSQL and Keycloak resources. On local macOS, Codex requests the Chromium launch permission on the first E2E run as required by `AGENTS.md`.

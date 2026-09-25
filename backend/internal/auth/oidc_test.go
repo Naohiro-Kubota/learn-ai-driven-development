@@ -274,6 +274,36 @@ func TestBeginLoginRequestsOpenIDScope(t *testing.T) {
 	}
 }
 
+func TestComposeOIDCTransportUsesInternalDialAndRetainsPublicIssuer(t *testing.T) {
+	provider := newOIDCTestProvider(t)
+	defer provider.server.Close()
+	provider.issuerOverride = "http://127.0.0.1:8081/realms/approval-flow-dev"
+	store := &oidcStoreFake{members: []string{"member-1"}}
+	cfg := provider.config()
+	cfg.OIDCIssuer = provider.issuerOverride
+	cfg.OIDCInternalAddress = strings.TrimPrefix(provider.server.URL, "http://")
+	a, err := NewOIDCAuthenticator(context.Background(), cfg, store, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, err := a.BeginLogin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(start.AuthorizationURL, provider.issuerOverride+"/authorize") {
+		t.Fatalf("authorization URL = %q", start.AuthorizationURL)
+	}
+	provider.setChallenge(t, start.AuthorizationURL)
+	provider.token = provider.signedToken(t, store.created.Nonce, nil)
+	result, err := a.CompleteLogin(context.Background(), CallbackInput{TransactionCookie: start.TransactionCookie, State: store.created.State, Code: "valid"})
+	if err != nil || result.Session == nil {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if provider.lastHost != "127.0.0.1:8081" {
+		t.Fatalf("Host header = %q", provider.lastHost)
+	}
+}
+
 func TestOIDCCompleteLoginVerifiesTokenAndBranchesByMembershipCount(t *testing.T) {
 	provider := newOIDCTestProvider(t)
 	defer provider.server.Close()
@@ -394,10 +424,11 @@ func TestOIDCCompleteLoginConsumesTransactionWhenPKCERejected(t *testing.T) {
 }
 
 type oidcTestProvider struct {
-	server          *httptest.Server
-	private         *rsa.PrivateKey
-	token, verifier string
-	challenge       string
+	server                   *httptest.Server
+	private                  *rsa.PrivateKey
+	token, verifier          string
+	challenge                string
+	issuerOverride, lastHost string
 }
 
 func newOIDCTestProvider(t *testing.T) *oidcTestProvider {
@@ -408,10 +439,17 @@ func newOIDCTestProvider(t *testing.T) *oidcTestProvider {
 	}
 	p := &oidcTestProvider{private: key}
 	p.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.lastHost = r.Host
 		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
+		issuer := p.server.URL
+		path := r.URL.Path
+		if p.issuerOverride != "" {
+			issuer = p.issuerOverride
+			path = strings.TrimPrefix(path, "/realms/approval-flow-dev")
+		}
+		switch path {
 		case "/.well-known/openid-configuration":
-			_ = json.NewEncoder(w).Encode(map[string]string{"issuer": p.server.URL, "authorization_endpoint": p.server.URL + "/authorize", "token_endpoint": p.server.URL + "/token", "jwks_uri": p.server.URL + "/jwks"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"issuer": issuer, "authorization_endpoint": issuer + "/authorize", "token_endpoint": issuer + "/token", "jwks_uri": issuer + "/jwks"})
 		case "/jwks":
 			_ = json.NewEncoder(w).Encode(map[string]any{"keys": []map[string]string{{"kty": "RSA", "kid": "test", "use": "sig", "alg": "RS256", "n": base64.RawURLEncoding.EncodeToString(p.private.PublicKey.N.Bytes()), "e": base64.RawURLEncoding.EncodeToString([]byte{1, 0, 1})}}})
 		case "/token":
@@ -445,7 +483,11 @@ func (p *oidcTestProvider) setChallenge(t *testing.T, rawAuthorizationURL string
 }
 func (p *oidcTestProvider) signedToken(t *testing.T, nonce string, overrides map[string]any) string {
 	t.Helper()
-	claims := map[string]any{"iss": p.server.URL, "aud": "client", "exp": time.Now().Add(time.Minute).Unix(), "iat": time.Now().Unix(), "nonce": nonce, "sub": "subject-1"}
+	issuer := p.server.URL
+	if p.issuerOverride != "" {
+		issuer = p.issuerOverride
+	}
+	claims := map[string]any{"iss": issuer, "aud": "client", "exp": time.Now().Add(time.Minute).Unix(), "iat": time.Now().Unix(), "nonce": nonce, "sub": "subject-1"}
 	for k, v := range overrides {
 		claims[k] = v
 	}

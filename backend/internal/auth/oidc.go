@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"net"
+	"net/http"
 	"time"
 
 	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/config"
@@ -22,11 +24,12 @@ type transactionStore interface {
 }
 
 type Authenticator struct {
-	transactions transactionStore
-	now          func() time.Time
-	config       config.Config
-	oauth        oauth2.Config
-	verifier     *oidc.IDTokenVerifier
+	transactions   transactionStore
+	now            func() time.Time
+	config         config.Config
+	oauth          oauth2.Config
+	verifier       *oidc.IDTokenVerifier
+	internalClient *http.Client
 }
 
 type CallbackInput struct {
@@ -81,14 +84,31 @@ func NewAuthenticator(transactions transactionStore, now func() time.Time) *Auth
 }
 
 func NewOIDCAuthenticator(ctx context.Context, cfg config.Config, transactions transactionStore, now func() time.Time) (*Authenticator, error) {
+	var internalClient *http.Client
+	if cfg.OIDCInternalAddress != "" {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.Proxy = nil
+		dialer := &net.Dialer{}
+		transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			if address == "127.0.0.1:8081" {
+				address = cfg.OIDCInternalAddress
+			}
+			return dialer.DialContext(ctx, network, address)
+		}
+		internalClient = &http.Client{Transport: transport, Timeout: 10 * time.Second}
+		ctx = oidc.ClientContext(ctx, internalClient)
+	}
 	provider, err := oidc.NewProvider(ctx, cfg.OIDCIssuer)
 	if err != nil {
 		return nil, err
 	}
-	return &Authenticator{transactions: transactions, now: now, config: cfg, oauth: oauth2.Config{ClientID: cfg.OIDCClientID, Endpoint: provider.Endpoint(), RedirectURL: cfg.OIDCRedirectURI, Scopes: []string{oidc.ScopeOpenID}}, verifier: provider.Verifier(&oidc.Config{ClientID: cfg.OIDCClientID})}, nil
+	return &Authenticator{transactions: transactions, now: now, config: cfg, oauth: oauth2.Config{ClientID: cfg.OIDCClientID, Endpoint: provider.Endpoint(), RedirectURL: cfg.OIDCRedirectURI, Scopes: []string{oidc.ScopeOpenID}}, verifier: provider.Verifier(&oidc.Config{ClientID: cfg.OIDCClientID}), internalClient: internalClient}, nil
 }
 
 func (a *Authenticator) CompleteLogin(ctx context.Context, input CallbackInput) (LoginResult, error) {
+	if a.internalClient != nil {
+		ctx = oidc.ClientContext(ctx, a.internalClient)
+	}
 	if a.transactions == nil || a.verifier == nil {
 		return LoginResult{}, fmt.Errorf("authenticator is not configured")
 	}
