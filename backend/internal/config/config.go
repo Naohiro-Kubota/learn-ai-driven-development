@@ -12,6 +12,8 @@ import (
 type Config struct {
 	DatabaseURL, ListenAddress, FrontendOrigin string
 	OIDCIssuer, OIDCClientID, OIDCRedirectURI  string
+	OIDCInternalAddress                        string
+	LocalCompose                               bool
 	CookieSecure                               bool
 	AuthTransactionKey                         [32]byte
 	SessionIdleTTL, SessionAbsoluteTTL         time.Duration
@@ -41,12 +43,25 @@ func Load(lookup func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("APP_FRONTEND_ORIGIN %w", err)
 	}
 	cfg.FrontendOrigin = parsedOrigin.String()
+	composeMode := lookup("APP_LOCAL_COMPOSE")
+	if composeMode != "" && composeMode != "true" {
+		return Config{}, fmt.Errorf("APP_LOCAL_COMPOSE must be true or unset")
+	}
+	cfg.LocalCompose = composeMode == "true"
+	cfg.OIDCInternalAddress = lookup("OIDC_INTERNAL_ADDR")
+	if cfg.LocalCompose {
+		if lookup("APP_ENV") != "development" || !isLoopbackOrigin(cfg.FrontendOrigin) || cfg.OIDCIssuer != "http://127.0.0.1:8081/realms/approval-flow-dev" || cfg.OIDCInternalAddress != "keycloak:8080" {
+			return Config{}, fmt.Errorf("local Compose network settings require approved development endpoints")
+		}
+	} else if cfg.OIDCInternalAddress != "" {
+		return Config{}, fmt.Errorf("OIDC_INTERNAL_ADDR requires local Compose mode")
+	}
 	secure, err := parseBool(lookup("APP_COOKIE_SECURE"))
 	if err != nil {
 		return Config{}, err
 	}
 	cfg.CookieSecure = secure
-	if !secure && (lookup("APP_ENV") != "development" || !isLoopback(cfg.ListenAddress) || !isLoopbackOrigin(cfg.FrontendOrigin)) {
+	if !secure && (lookup("APP_ENV") != "development" || !(isLoopback(cfg.ListenAddress) || cfg.LocalCompose && cfg.ListenAddress == "0.0.0.0:8080") || !isLoopbackOrigin(cfg.FrontendOrigin)) {
 		return Config{}, fmt.Errorf("insecure cookies require loopback development")
 	}
 	key, err := base64.StdEncoding.DecodeString(lookup("AUTH_TRANSACTION_KEY"))

@@ -1,0 +1,8 @@
+.git
+.env
+.env.*
+**/.env
+**/.env.*
+.npmrc
+**/.npmrc
+**/*_test.go

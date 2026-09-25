@@ -132,3 +132,42 @@ func testEnvironment() map[string]string {
 		"AUTH_TRANSACTION_TTL": "5m",
 	}
 }
+
+func TestLoadAllowsComposeNetworkOnlyInExplicitDevelopmentMode(t *testing.T) {
+	values := testEnvironment()
+	values["APP_ENV"] = "development"
+	values["APP_LOCAL_COMPOSE"] = "true"
+	values["APP_COOKIE_SECURE"] = "false"
+	values["APP_LISTEN_ADDR"] = "0.0.0.0:8080"
+	values["APP_FRONTEND_ORIGIN"] = "http://127.0.0.1:5173"
+	values["OIDC_ISSUER"] = "http://127.0.0.1:8081/realms/approval-flow-dev"
+	values["OIDC_INTERNAL_ADDR"] = "keycloak:8080"
+	for _, tc := range []struct {
+		name, key, value string
+		allowed          bool
+	}{
+		{"compose", "", "", true},
+		{"production", "APP_ENV", "production", false},
+		{"missing mode", "APP_LOCAL_COMPOSE", "", false},
+		{"external frontend", "APP_FRONTEND_ORIGIN", "http://example.test", false},
+		{"external issuer", "OIDC_ISSUER", "http://example.test/realms/dev", false},
+		{"arbitrary internal host", "OIDC_INTERNAL_ADDR", "example.test:8080", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			copy := map[string]string{}
+			for k, v := range values {
+				copy[k] = v
+			}
+			if tc.key != "" {
+				copy[tc.key] = tc.value
+			}
+			cfg, err := Load(func(k string) string { return copy[k] })
+			if tc.allowed && (err != nil || !cfg.LocalCompose || cfg.OIDCInternalAddress != "keycloak:8080") {
+				t.Fatalf("cfg=%+v err=%v", cfg, err)
+			}
+			if !tc.allowed && err == nil {
+				t.Fatal("unsafe Compose configuration accepted")
+			}
+		})
+	}
+}

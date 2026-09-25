@@ -1,11 +1,90 @@
+name: approval-flow-local
 services:
+  postgres:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_DB: approval_flow_local
+      POSTGRES_USER: local_user
+      POSTGRES_PASSWORD: "${LOCAL_DB_PASSWORD:?LOCAL_DB_PASSWORD is required}"
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - local_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U local_user -d approval_flow_local"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.4@sha256:82a77884f3af238beab1e7afd63b5f530e1b5c0590bd7aa60b40a40463e29b2c
     command: ["start-dev", "--http-port=8080", "--import-realm"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_ADMIN_USERNAME:?KEYCLOAK_ADMIN_USERNAME is required}"
       KC_BOOTSTRAP_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}"
+      KC_HOSTNAME: "http://127.0.0.1:8081"
     ports:
       - "127.0.0.1:8081:8080"
     volumes:
+      - local_keycloak:/opt/keycloak/data
       - ./keycloak/realms:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.local
+    command: ["/migrate-local", "up"]
+    environment:
+      APP_ENV: development
+      APP_LOCAL_COMPOSE: "true"
+      DATABASE_URL: "postgres://local_user:${LOCAL_DB_PASSWORD:?LOCAL_DB_PASSWORD is required}@postgres:5432/approval_flow_local?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.local
+    command: ["/api"]
+    environment:
+      APP_ENV: development
+      APP_LOCAL_COMPOSE: "true"
+      APP_LISTEN_ADDR: "0.0.0.0:8080"
+      APP_FRONTEND_ORIGIN: "http://127.0.0.1:5173"
+      APP_COOKIE_SECURE: "false"
+      DATABASE_URL: "postgres://local_user:${LOCAL_DB_PASSWORD:?LOCAL_DB_PASSWORD is required}@postgres:5432/approval_flow_local?sslmode=disable"
+      OIDC_ISSUER: "http://127.0.0.1:8081/realms/approval-flow-dev"
+      OIDC_INTERNAL_ADDR: "keycloak:8080"
+      OIDC_CLIENT_ID: approval-flow
+      OIDC_REDIRECT_URI: "http://127.0.0.1:8080/auth/oidc/callback"
+      AUTH_TRANSACTION_KEY: "${AUTH_TRANSACTION_KEY:?AUTH_TRANSACTION_KEY is required}"
+      SESSION_IDLE_TTL: 15m
+      SESSION_ABSOLUTE_TTL: 8h
+      AUTH_TRANSACTION_TTL: 5m
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+    restart: unless-stopped
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.local
+    environment:
+      VITE_API_ORIGIN: "http://127.0.0.1:8080"
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+volumes:
+  local_postgres:
+  local_keycloak:

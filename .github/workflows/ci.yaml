@@ -33,7 +33,7 @@ jobs:
       - name: Frontend unit tests
         run: pnpm test
       - name: Node script tests
-        run: node --test scripts/verify-openapi.test.mjs scripts/test-postgres.test.mjs scripts/verify-ci-workflow.test.mjs scripts/e2e-seed.test.mjs
+        run: node --test scripts/verify-openapi.test.mjs scripts/test-postgres.test.mjs scripts/verify-ci-workflow.test.mjs scripts/e2e-seed.test.mjs scripts/local-compose.test.mjs
       - name: E2E runner unit tests
         run: pnpm run test:e2e:runner
       - name: Check Keycloak provisioning shell syntax

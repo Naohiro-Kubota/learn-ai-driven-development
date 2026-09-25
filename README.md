@@ -58,3 +58,5 @@ Codex を主エージェントとして、AI駆動開発のプロセスそのも
 - リポジトリルート: `package.json` と `pnpm-lock.yaml`、共通 script、OpenAPI契約、CI設定
 
 Frontendの開発・テスト・buildはルートから`pnpm run dev`、`pnpm test`、`pnpm run build`で実行します。Goのcommandと検査は`backend/`から実行します。詳細は[Frontend local development](docs/development/frontend-local-development.md)と[Local API](docs/development/local-api.md)を参照してください。
+
+ローカルのFrontend、Backend、PostgreSQL、Keycloakは`docker compose -f compose.local.yaml up --build -d`で起動できます。秘密情報の入力、初期データの準備、終了方法は[Local API](docs/development/local-api.md)を参照してください。この構成はAccepted [ADR-018](docs/decisions/architecture/ADR-018-local-compose-application-stack.md)に基づく開発専用スタックです。
