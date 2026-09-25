@@ -50,3 +50,11 @@ Codex を主エージェントとして、AI駆動開発のプロセスそのも
 4. `tasks/TASK-001-foundation-decisions.md` を Codex に依頼する
 5. Codex が作成した ADR 候補を人間がレビューする
 6. Accepted になったDecisionだけを実装する
+
+## ソースの配置と実行入口
+
+- `backend/`: Go module、API command、domain・infrastructure code、DB migration
+- `frontend/`: React/TypeScript source、HTML entry、browser E2E
+- リポジトリルート: `package.json` と `pnpm-lock.yaml`、共通 script、OpenAPI契約、CI設定
+
+Frontendの開発・テスト・buildはルートから`pnpm run dev`、`pnpm test`、`pnpm run build`で実行します。Goのcommandと検査は`backend/`から実行します。詳細は[Frontend local development](docs/development/frontend-local-development.md)と[Local API](docs/development/local-api.md)を参照してください。

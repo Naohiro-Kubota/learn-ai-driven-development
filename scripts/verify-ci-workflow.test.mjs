@@ -69,3 +69,12 @@ test("CI runs every required check and isolates database and browser jobs", () =
 	assert.ok(e2eJob);
 	assert.notEqual(dbJob, e2eJob);
 });
+
+test("CI executes Go module commands from backend", () => {
+	const goJob = workflow.jobs.go;
+	for (const step of goJob.steps.filter((step) =>
+		/^go (vet|test|mod)\b/.test(step.run ?? ""),
+	)) {
+		assert.equal(step["working-directory"], "backend");
+	}
+});

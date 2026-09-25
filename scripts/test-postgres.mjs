@@ -13,7 +13,11 @@ export function runDatabaseTests({
 	const env = { ...outerEnv, TEST_DB_PASSWORD: password };
 	const databaseURL = `postgres://test_user:${encodeURIComponent(password)}@127.0.0.1:55432/approval_flow_test?sslmode=disable`;
 	const run = (command, args, runEnv = env) =>
-		spawnProcess(command, args, { stdio: "inherit", env: runEnv }).status ?? 1;
+		spawnProcess(command, args, {
+			stdio: "inherit",
+			env: runEnv,
+			...(command === "go" ? { cwd: "backend" } : {}),
+		}).status ?? 1;
 	let status = 0;
 	try {
 		status = run("docker", [...compose, "up", "-d", "--wait"]);

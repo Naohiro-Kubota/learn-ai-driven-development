@@ -421,7 +421,7 @@ func TestWriteErrorSanitizesUnexpectedDetails(t *testing.T) {
 }
 
 func TestOrganizationSelectionOpenAPIContract(t *testing.T) {
-	data, err := os.ReadFile("../../api/openapi.yaml")
+	data, err := os.ReadFile("../../../api/openapi.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

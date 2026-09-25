@@ -8,7 +8,7 @@ const outputDir = process.env.E2E_PLAYWRIGHT_OUTPUT_DIR;
 if (!outputDir) throw new Error("Run browser tests through pnpm run test:e2e");
 
 export default defineConfig({
-	testDir: "./e2e",
+	testDir: "./frontend/e2e",
 	outputDir,
 	workers: 1,
 	retries: 0,

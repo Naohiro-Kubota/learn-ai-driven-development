@@ -100,6 +100,19 @@ test("uses a writable per-run Go cache and removes it after cleanup", async () =
 	assert.equal(existsSync(cache), false);
 });
 
+test("runs Go in backend and serves the frontend directory", async () => {
+	const { deps, calls } = fakeDeps();
+	await runStack(deps);
+	for (const call of calls.filter(({ command }) => command === "go")) {
+		assert.equal(call.options.cwd, "backend");
+	}
+	const vite = calls.find(
+		({ command, args }) => command === "pnpm" && args[1] === "vite",
+	);
+	assert.ok(vite);
+	assert.ok(vite.args.includes("frontend"));
+});
+
 test("removes only its per-run Playwright artifacts on success and failure", async () => {
 	const outputDirs = [];
 	for (const playwrightExit of [0, 1]) {
@@ -278,7 +291,7 @@ test("prints only validated Playwright diagnostic fields from mixed raw output",
 		queueMicrotask(() => {
 			child.stdout.write("raw token=private-sentinel\nE2E_DIAG");
 			child.stdout.write(
-				'NOSTIC:{"phase":"callback","status":400,"code":"invalid_auth_transaction","cookiePresent":true,"pathname":"/","testId":"approval_flow","file":"e2e/approval-flow.spec.ts","line":85}\n',
+				'NOSTIC:{"phase":"callback","status":400,"code":"invalid_auth_transaction","cookiePresent":true,"pathname":"/","testId":"approval_flow","file":"frontend/e2e/approval-flow.spec.ts","line":85}\n',
 			);
 			child.stderr.write(
 				'E2E_DIAGNOSTIC:{"phase":"callback","status":400,"code":"private-sentinel","cookiePresent":true,"pathname":"/"}\n',
@@ -296,7 +309,7 @@ test("prints only validated Playwright diagnostic fields from mixed raw output",
 	assert.deepEqual(
 		log.filter((line) => line.startsWith("E2E diagnostic:")),
 		[
-			"E2E diagnostic: test=approval_flow file=e2e/approval-flow.spec.ts:85 phase=callback status=400 code=invalid_auth_transaction cookiePresent=true pathname=/",
+			"E2E diagnostic: test=approval_flow file=frontend/e2e/approval-flow.spec.ts:85 phase=callback status=400 code=invalid_auth_transaction cookiePresent=true pathname=/",
 		],
 	);
 	assert.equal(log.join(" ").includes("private-sentinel"), false);

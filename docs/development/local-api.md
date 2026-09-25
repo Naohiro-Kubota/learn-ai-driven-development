@@ -11,7 +11,7 @@ Run from the repository root. Use these exact versions:
 
 - Node.js `26.9.0` (`.node-version`)
 - pnpm `12.5.1` (`package.json`)
-- Go `1.27.1` (`.go-version` and `go.mod`)
+- Go `1.27.1` (`.go-version` and `backend/go.mod`)
 - PostgreSQL `17.11` for the repository's test container
 - Keycloak `26.7.4` with the pinned image digest in
   [`docs/development/toolchain.md`](toolchain.md)
@@ -45,7 +45,7 @@ loopback `127.0.0.1:55432`, injects the isolated
 `TEST_DATABASE_URL` into the Go PostgreSQL tests, and runs the tests with
 `GOTOOLCHAIN=go1.27.1`. The script generates a disposable database password
 for each run. The tests apply the checked-in migrations from
-`migrations/` in version order. The script always runs `docker compose -f
+`backend/migrations/` in version order. The script always runs `docker compose -f
 compose.test.yaml down -v --remove-orphans` afterward, including after a failure.
 
 This test database is not the API's development database. Do not point
@@ -63,13 +63,13 @@ the separate development database with the repository's explicit local CLI:
 
 ```sh
 export DATABASE_URL='<separate local development database URL>'
-GOTOOLCHAIN=go1.27.1 go run ./cmd/migrate-local up
+(cd backend && GOTOOLCHAIN=go1.27.1 go run ./cmd/migrate-local up)
 ```
 
 `up` is the default when the command is omitted. The CLI also accepts
 `-database-url '<local URL>'`, and supports `down` and `version`; it never
 prints the URL. Do not use it with a production database. Do not edit the
-schema manually or run migrations by starting `cmd/api`.
+schema manually or run migrations by starting `backend/cmd/api`.
 
 For automated migration and PostgreSQL verification, use only:
 
@@ -151,7 +151,7 @@ After the separate development database has been migrated and Keycloak is
 ready, start the API:
 
 ```sh
-GOTOOLCHAIN=go1.27.1 go run ./cmd/api
+(cd backend && GOTOOLCHAIN=go1.27.1 go run ./cmd/api)
 ```
 
 The API listens on `127.0.0.1:8080`. Every implemented method/path in the
@@ -180,8 +180,8 @@ live PostgreSQL database or Keycloak:
 ```sh
 pnpm run verify:openapi
 node --test scripts/verify-openapi.test.mjs
-GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/config ./internal/auth ./internal/httpapi ./cmd/api ./cmd/migrate-local -count=1
-GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go vet ./...
+(cd backend && GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go test ./internal/config ./internal/auth ./internal/httpapi ./cmd/api ./cmd/migrate-local -count=1)
+(cd backend && GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go vet ./...)
 ```
 
 Run the PostgreSQL integration suite separately with its isolated harness:

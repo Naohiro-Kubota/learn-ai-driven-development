@@ -64,10 +64,13 @@ jobs:
         run: pnpm run check:gofmt
       - name: Go vet
         run: go vet ./...
+        working-directory: backend
       - name: Go tests without database
         run: go test $(go list ./... | grep -v '/internal/store/postgres$') -count=1
+        working-directory: backend
       - name: Verify Go modules
         run: go mod verify
+        working-directory: backend
       - name: Confirm tracked files were not modified
         run: git diff --exit-code
 

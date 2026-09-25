@@ -26,6 +26,7 @@ test("database runner creates a fresh password and passes it only in process env
 	);
 	assert.equal(calls[2].options.env.TEST_DB_PASSWORD, password);
 	assert.ok(calls[1].args.includes("-mod=readonly"));
+	assert.equal(calls[1].options.cwd, "backend");
 	assert.equal(
 		JSON.stringify(calls.map(({ args }) => args)).includes(password),
 		false,
