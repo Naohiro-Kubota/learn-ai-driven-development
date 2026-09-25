@@ -73,7 +73,10 @@ function validatedDiagnostic(line) {
 		value.testId !== "organization_selection"
 	)
 		return;
-	if (value.file !== undefined && value.file !== "e2e/approval-flow.spec.ts")
+	if (
+		value.file !== undefined &&
+		value.file !== "frontend/e2e/approval-flow.spec.ts"
+	)
 		return;
 	if (
 		value.line !== undefined &&
@@ -381,7 +384,9 @@ export async function runStack(deps = {}) {
 			[],
 			controller.signal,
 		);
-		await execute("go", ["run", "./cmd/migrate-local", "up"]);
+		await execute("go", ["run", "./cmd/migrate-local", "up"], {
+			cwd: "backend",
+		});
 		const seed =
 			deps.seed ??
 			(async (seedOptions) => {
@@ -390,6 +395,7 @@ export async function runStack(deps = {}) {
 			});
 		await seed({ exec: execute, issuer, password, project, env });
 		api = launch(spawnProcess, "go", ["run", "./cmd/api"], {
+			cwd: "backend",
 			env,
 			stdio: "ignore",
 			detached: true,
@@ -405,7 +411,16 @@ export async function runStack(deps = {}) {
 		vite = launch(
 			spawnProcess,
 			"pnpm",
-			["exec", "vite", "--host", "127.0.0.1", "--port", "5173", "--strictPort"],
+			[
+				"exec",
+				"vite",
+				"frontend",
+				"--host",
+				"127.0.0.1",
+				"--port",
+				"5173",
+				"--strictPort",
+			],
 			{ env, stdio: "ignore", detached: true },
 		);
 		vite.label = "Vite";

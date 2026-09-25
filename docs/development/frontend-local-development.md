@@ -14,7 +14,7 @@ Follow [Local API](local-api.md) to create a **separate development database**, 
 The example settings are listed in [`.env.example`](../../.env.example). That file is a checklist, not a source of credentials or an automatically loaded Go configuration. Supply `DATABASE_URL`, `OIDC_CLIENT_ID`, and a fresh standard-base64 `AUTH_TRANSACTION_KEY` encoding exactly 32 random bytes in the API process environment. Keep all secrets out of the repository and shell history. Start the migrated API as described in [Local API](local-api.md):
 
 ```sh
-GOTOOLCHAIN=go1.27.1 go run ./cmd/api
+(cd backend && GOTOOLCHAIN=go1.27.1 go run ./cmd/api)
 ```
 
 In another terminal, start Vite:
@@ -49,7 +49,7 @@ pnpm test
 pnpm run test:e2e:runner
 pnpm run build
 pnpm run check:gofmt
-GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go vet ./...
+(cd backend && GOCACHE=/private/tmp/learn-ai-go-cache GOTOOLCHAIN=go1.27.1 go vet ./...)
 GOCACHE=/private/tmp/learn-ai-go-cache pnpm run test:db
 ```
 

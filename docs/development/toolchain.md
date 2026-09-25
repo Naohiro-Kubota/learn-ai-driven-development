@@ -8,7 +8,7 @@ Status: Accepted ADR configuration
 
 | Component | Fixed version | Pin location |
 | --- | --- | --- |
-| Go | 1.27.1 | `.go-version`, `go.mod` `go` directive |
+| Go | 1.27.1 | `.go-version`, `backend/go.mod` `go` directive |
 | Node.js | 26.9.0 | `.node-version`, `package.json` `engines` |
 | pnpm | 12.5.1 | `package.json` `packageManager` / `engines` |
 | TypeScript | 7.0.2 | `package.json`, `pnpm-lock.yaml` |
@@ -32,6 +32,8 @@ Node.js 26.9.0は現時点の最新stable Current releaseである。LTSを優�
 | OIDC provider | Keycloak | 26.7.4 | ADR-009 |
 | OIDC client/token verification | coreos/go-oidc / x/oauth2 | 3.21.0 / 0.37.0 | ADR-010 |
 
+Go sourceは`backend/`、React sourceとbrowser E2Eは`frontend/`に配置する。ルートの`package.json`と`scripts/`は共通の実行入口、`api/openapi.yaml`はAPI契約の正本として維持する。Go commandは`backend/`を作業ディレクトリとして実行し、ルートのpnpm scriptは従来どおり使用する。
+
 Go sourceはADR-012に従い`gofmt`でformatし、`go vet ./...`で静的解析する。TypeScript/TSX/JavaScript/JSONはBiomeでformat/lintする。CIではいずれの検査もファイルを書き換えない。
 
 ## Installation policy
@@ -39,7 +41,7 @@ Go sourceはADR-012に従い`gofmt`でformatし、`go vet ./...`で静的解析�
 - Node.js、pnpm、Goは固定versionを使用する。既存のローカルversionが異なる場合は、固定versionを導入してから実行する。
 - CIは`pnpm install --frozen-lockfile`のみを使用する。`pnpm-lock.yaml`の更新は、`package.json`と`pnpm-workspace.yaml`を含む同一レビューで行う。
 - pnpmの`minimumReleaseAge`、`blockExoticSubdeps`、`strictStorePkgContentCheck`、`strictDepBuilds`、`allowBuilds`は`pnpm-workspace.yaml`を正本とする。
-- Go moduleは`go.mod`と`go.sum`をコミットする。依存更新はGo module versionと間接依存の差分をレビューする。
+- Go moduleは`backend/go.mod`と`backend/go.sum`をコミットする。依存更新はGo module versionと間接依存の差分をレビューする。
 - Keycloak imageはtagだけで運用せず、provisioning時に対応するcontainer digestを記録する。development modeはローカル/E2E限定である。
 - PostgreSQL migration統合テストは`pnpm run test:db`を使用する。これは実行ごとにDBパスワードを生成し、`compose.test.yaml`で一時的なPostgreSQL 17.11 containerを起動して`TEST_DATABASE_URL`を注入した後、containerとvolumeを破棄する。
 

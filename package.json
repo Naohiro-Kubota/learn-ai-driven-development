@@ -10,7 +10,7 @@
 	},
 	"scripts": {
 		"build": "tsc -b && vite build",
-		"dev": "vite",
+		"dev": "vite frontend",
 		"test": "vitest run",
 		"test:e2e": "node scripts/e2e-stack.mjs",
 		"test:e2e:runner": "node --test scripts/e2e-stack.test.mjs",

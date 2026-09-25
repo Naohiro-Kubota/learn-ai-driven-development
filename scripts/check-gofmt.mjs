@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import process from "node:process";
 
 export function findUnformattedFiles(files, runGofmt) {
@@ -7,11 +8,23 @@ export function findUnformattedFiles(files, runGofmt) {
 }
 
 function trackedGoFiles() {
-	return execFileSync("git", ["ls-files", "-z", "--", "*.go"], {
-		encoding: "utf8",
-	})
+	return execFileSync(
+		"git",
+		[
+			"ls-files",
+			"-z",
+			"--cached",
+			"--others",
+			"--exclude-standard",
+			"--",
+			"*.go",
+		],
+		{
+			encoding: "utf8",
+		},
+	)
 		.split("\0")
-		.filter(Boolean);
+		.filter((file) => file && existsSync(file));
 }
 
 function runGofmt(files) {

@@ -12,5 +12,5 @@
 		"jsx": "react-jsx",
 		"types": ["vite/client", "vitest/globals"]
 	},
-	"include": ["src", "vite.config.ts", "tooling/empty.d.ts"]
+	"include": ["frontend/src", "vite.config.ts", "tooling/empty.d.ts"]
 }
