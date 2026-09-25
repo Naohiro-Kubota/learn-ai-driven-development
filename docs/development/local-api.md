@@ -32,6 +32,14 @@ curl -i http://127.0.0.1:8080/api/v1/session
 
 An unauthenticated `GET /api/v1/session` should return `401`. To inspect a startup failure, run `docker compose -f compose.local.yaml logs --tail=100` and inspect the migration, Keycloak, and Backend services. Do not paste logs containing local credentials into a shared issue.
 
+## Observability
+
+The API emits one JSON completion log per HTTP request to standard output, following Accepted [ADR-019](../decisions/architecture/ADR-019-observability-signal-architecture.md) and [NFR-005](../product/requirements.md#nfr-005-observability). Fields are `request_id`, `method`, `route`, `status`, `duration_ms`, and `failure_class`; sampled traces also add `trace_id`. `route` is a registered route template such as `GET /api/v1/requests/{requestId}` or `unmatched`. Failure classes are `authentication`, `authorization`, `conflict`, `client`, `server`, `panic`, and `none`. The API returns the correlation value in `X-Request-ID`. A single client-supplied ID of 1–64 ASCII letters, digits, `_`, or `-` is accepted; missing, duplicate, or invalid values are replaced with a generated ID. Do not place credentials or personal data in a client-supplied ID.
+
+To diagnose a failed request, record the response's `X-Request-ID`, find that value in Backend JSON logs, then inspect the bounded route, status, failure class, and duration. If `trace_id` is present, use it to find the sampled trace in the configured receiver. Logs and OTLP signals omit raw paths, request bodies, headers, tokens, cookies, connection strings, PKCE values, Member and Organization IDs, and arbitrary error text. Audit Events remain the durable business record under [ADR-004](../decisions/architecture/ADR-004-relational-persistence-data-access-and-migrations.md); telemetry does not replace them.
+
+OTLP export is disabled by default and makes no collector connection. To enable it in an approved environment, set `APP_OTLP_ENDPOINT` to an HTTP(S) origin, for example `http://127.0.0.1:4318`. Export uses OTLP over HTTP/protobuf at `/v1/metrics` and `/v1/traces`. If the receiver needs credentials, supply them through the OpenTelemetry SDK's `OTEL_EXPORTER_OTLP_HEADERS` environment variable using the environment's secret store; never commit or print them. `APP_OTLP_TIMEOUT` defaults to `3s` and accepts a positive duration up to `10s`. `APP_TRACE_SAMPLE_RATIO` defaults to `0.1` and accepts a value from `0` through `1`; metrics are recorded regardless of trace sampling. Export errors produce a sanitized `telemetry export failed` warning and do not change API responses. Graceful shutdown flushes both signals within the API's 10-second shutdown budget. The receiver, storage service, retention, dashboards, alerts, and SLOs remain undecided and need a separate operational and data-protection review before external export is enabled.
+
 ## Stop or reset
 
 ```sh

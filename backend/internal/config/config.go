@@ -3,8 +3,10 @@ package config
 import (
 	"encoding/base64"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,6 +20,9 @@ type Config struct {
 	AuthTransactionKey                         [32]byte
 	SessionIdleTTL, SessionAbsoluteTTL         time.Duration
 	AuthTransactionTTL                         time.Duration
+	OTLPEndpoint                               string
+	OTLPTimeout                                time.Duration
+	TraceSampleRatio                           float64
 }
 
 func Load(lookup func(string) string) (Config, error) {
@@ -77,6 +82,31 @@ func Load(lookup func(string) string) (Config, error) {
 	}
 	if cfg.AuthTransactionTTL, err = positiveDuration("AUTH_TRANSACTION_TTL", lookup); err != nil {
 		return Config{}, err
+	}
+	cfg.OTLPEndpoint = lookup("APP_OTLP_ENDPOINT")
+	cfg.TraceSampleRatio = 0.1
+	if value := lookup("APP_TRACE_SAMPLE_RATIO"); value != "" {
+		cfg.TraceSampleRatio, err = strconv.ParseFloat(value, 64)
+		if err != nil || math.IsNaN(cfg.TraceSampleRatio) || cfg.TraceSampleRatio < 0 || cfg.TraceSampleRatio > 1 {
+			return Config{}, fmt.Errorf("APP_TRACE_SAMPLE_RATIO must be between 0 and 1")
+		}
+	}
+	if cfg.OTLPEndpoint == "" {
+		if lookup("APP_OTLP_TIMEOUT") != "" {
+			return Config{}, fmt.Errorf("APP_OTLP_TIMEOUT requires APP_OTLP_ENDPOINT")
+		}
+		return cfg, nil
+	}
+	endpoint, err := url.Parse(cfg.OTLPEndpoint)
+	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" || endpoint.User != nil || endpoint.Path != "" || endpoint.RawQuery != "" || endpoint.Fragment != "" || strings.TrimSpace(cfg.OTLPEndpoint) != cfg.OTLPEndpoint {
+		return Config{}, fmt.Errorf("APP_OTLP_ENDPOINT must be an HTTP(S) origin without credentials")
+	}
+	cfg.OTLPTimeout = 3 * time.Second
+	if value := lookup("APP_OTLP_TIMEOUT"); value != "" {
+		cfg.OTLPTimeout, err = time.ParseDuration(value)
+		if err != nil || cfg.OTLPTimeout <= 0 || cfg.OTLPTimeout > 10*time.Second {
+			return Config{}, fmt.Errorf("APP_OTLP_TIMEOUT must be greater than zero and at most 10s")
+		}
 	}
 	return cfg, nil
 }

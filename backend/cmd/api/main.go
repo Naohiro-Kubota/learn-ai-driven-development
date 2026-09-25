@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -34,13 +34,13 @@ func main() {
 	defer stop()
 
 	if err := run(ctx, os.Getenv); err != nil {
-		logStartupFailure(log.Default(), err)
+		logStartupFailure(slog.New(slog.NewJSONHandler(os.Stdout, nil)), err)
 		os.Exit(1)
 	}
 }
 
-func logStartupFailure(logger *log.Logger, _ error) {
-	logger.Print("api stopped")
+func logStartupFailure(logger *slog.Logger, _ error) {
+	logger.Error("api stopped")
 }
 
 func run(ctx context.Context, lookup func(string) string) (runErr error) {
@@ -60,10 +60,23 @@ func run(ctx context.Context, lookup func(string) string) (runErr error) {
 	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("initialize database: %w", err)
 	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	telemetry, err := newTelemetry(ctx, cfg, logger)
+	if err != nil {
+		return fmt.Errorf("initialize telemetry: %w", err)
+	}
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if err := telemetry.shutdown(flushCtx); err != nil {
+			logger.Warn("telemetry shutdown failed")
+		}
+	}()
 	handler, err := newHandler(ctx, cfg, db)
 	if err != nil {
 		return err
 	}
+	handler = httpapi.NewObservabilityMiddleware(logger, telemetry.meter, telemetry.tracer)(handler)
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,

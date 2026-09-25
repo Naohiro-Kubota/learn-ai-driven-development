@@ -37,6 +37,7 @@ func NewCORS(allowedOrigin string, next http.Handler) http.Handler {
 		}
 		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 		appendVaryToken(w.Header(), "Origin")
 		next.ServeHTTP(w, request)
 	})

@@ -5,6 +5,8 @@ info:
   description: |
     最初のVertical SliceのブラウザUIとGoバックエンド間の契約。
     resource APIは /api/v1 を使用する。OIDC browser handoffは /auth/oidc に置く。
+    すべてのHTTP応答は診断用のX-Request-IDヘッダーを返す。許可されたFrontend Originには
+    Access-Control-Expose-Headersで同ヘッダーを公開する。値は業務上の識別子ではない。
 servers:
   - url: /
 tags:

@@ -47,20 +47,39 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	}
 	r := &router{dependencies: dependencies}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /auth/oidc/login", r.login)
-	mux.HandleFunc("GET /auth/oidc/callback", r.callback)
-	mux.HandleFunc("GET /auth/oidc/organization-selection", r.getOrganizationSelection)
-	mux.HandleFunc("POST /auth/oidc/organization-selection", r.selectOrganization)
-	mux.Handle("GET /api/v1/session", r.RequireSession(http.HandlerFunc(r.getSession)))
-	mux.Handle("POST /api/v1/session/logout", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.logout))))
-	mux.Handle("POST /api/v1/requests", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.createRequest))))
-	mux.Handle("GET /api/v1/requests/pending", r.RequireSession(http.HandlerFunc(r.listPending)))
-	mux.Handle("GET /api/v1/requests/{requestId}", r.RequireSession(http.HandlerFunc(r.getRequest)))
-	mux.Handle("PATCH /api/v1/requests/{requestId}", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.updateRequest))))
-	mux.Handle("POST /api/v1/requests/{requestId}/submit", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.submitRequest))))
-	mux.Handle("POST /api/v1/requests/{requestId}/approvals", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.approveRequest))))
-	mux.Handle("GET /api/v1/requests/{requestId}/audit-events", r.RequireSession(http.HandlerFunc(r.listAuditEvents)))
-	return NewCORS(dependencies.Config.FrontendOrigin, mux)
+	patterns := make(map[string]struct{})
+	register := func(pattern string, handler http.Handler) {
+		mux.Handle(pattern, handler)
+		patterns[pattern] = struct{}{}
+	}
+	register("GET /auth/oidc/login", http.HandlerFunc(r.login))
+	register("GET /auth/oidc/callback", http.HandlerFunc(r.callback))
+	register("GET /auth/oidc/organization-selection", http.HandlerFunc(r.getOrganizationSelection))
+	register("POST /auth/oidc/organization-selection", http.HandlerFunc(r.selectOrganization))
+	register("GET /api/v1/session", r.RequireSession(http.HandlerFunc(r.getSession)))
+	register("POST /api/v1/session/logout", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.logout))))
+	register("POST /api/v1/requests", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.createRequest))))
+	register("GET /api/v1/requests/pending", r.RequireSession(http.HandlerFunc(r.listPending)))
+	register("GET /api/v1/requests/{requestId}", r.RequireSession(http.HandlerFunc(r.getRequest)))
+	register("PATCH /api/v1/requests/{requestId}", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.updateRequest))))
+	register("POST /api/v1/requests/{requestId}/submit", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.submitRequest))))
+	register("POST /api/v1/requests/{requestId}/approvals", r.RequireSession(r.RequireCSRF(http.HandlerFunc(r.approveRequest))))
+	register("GET /api/v1/requests/{requestId}/audit-events", r.RequireSession(http.HandlerFunc(r.listAuditEvents)))
+	return routedHandler{Handler: NewCORS(dependencies.Config.FrontendOrigin, mux), mux: mux, patterns: patterns}
+}
+
+type routedHandler struct {
+	http.Handler
+	mux      *http.ServeMux
+	patterns map[string]struct{}
+}
+
+func (h routedHandler) RoutePattern(r *http.Request) string {
+	_, pattern := h.mux.Handler(r)
+	if _, registered := h.patterns[pattern]; !registered {
+		return ""
+	}
+	return pattern
 }
 
 func singleHeader(header http.Header, name string) string {

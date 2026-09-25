@@ -5,8 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -18,9 +19,13 @@ import (
 
 func TestStartupFailureLogDoesNotExposeError(t *testing.T) {
 	var output bytes.Buffer
-	logStartupFailure(log.New(&output, "", 0), errors.New("password=secret-value"))
+	logStartupFailure(slog.New(slog.NewJSONHandler(&output, nil)), errors.New("password=secret-value"))
 	if strings.Contains(output.String(), "secret-value") {
 		t.Fatalf("startup log exposed secret error details: %q", output.String())
+	}
+	var entry map[string]any
+	if err := json.Unmarshal(output.Bytes(), &entry); err != nil || entry["msg"] != "api stopped" {
+		t.Fatalf("startup log is not expected JSON: %s, err=%v", output.String(), err)
 	}
 }
 

@@ -10,6 +10,27 @@ import (
 	"github.com/Naohiro-Kubota/learn-ai-driven-development/internal/auth"
 )
 
+func TestCORSExposesRequestIDOnlyToAllowedOrigin(t *testing.T) {
+	for _, tc := range []struct {
+		origin string
+		want   string
+	}{
+		{"https://app.example.test", "X-Request-ID"},
+		{"https://other.example.test", ""},
+	} {
+		handler := NewObservabilityMiddleware(nil, nil, nil)(NewCORS("https://app.example.test", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})))
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Origin", tc.origin)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if got := w.Header().Get("Access-Control-Expose-Headers"); got != tc.want {
+			t.Fatalf("origin=%q exposed=%q want=%q", tc.origin, got, tc.want)
+		}
+	}
+}
+
 func TestRouterCORSAllowsConfiguredOriginAndPreflightWithoutCallingMux(t *testing.T) {
 	d := testDependencies()
 	cases := []struct {
